@@ -1,0 +1,9 @@
+*.pyc
+*.pth
+*.sh
+
+/data/*
+/curves/*
+/pretrain/*
+/result/*
+/logs/*
