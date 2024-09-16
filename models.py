@@ -7,14 +7,14 @@ import torch.nn.functional as F
 import math
 import numpy as np
 
-class Regularizer():
-    def __init__(self, base_add, min_val, max_val):
-        self.base_add = base_add
-        self.min_val = min_val
-        self.max_val = max_val
+# class Regularizer():
+#     def __init__(self, base_add, min_val, max_val):
+#         self.base_add = base_add
+#         self.min_val = min_val
+#         self.max_val = max_val
 
-    def __call__(self, entity_embedding):
-        return torch.clamp(entity_embedding + self.base_add, self.min_val, self.max_val)
+#     def __call__(self, entity_embedding):
+#         return torch.clamp(entity_embedding + self.base_add, self.min_val, self.max_val)
 
 class InvLinear(nn.Module):
     r"""Permutation invariant linear layer.
@@ -38,10 +38,8 @@ class InvLinear(nn.Module):
         self.reduction = reduction
         self.dropout = dropout
 
-        self.in_projector1 = nn.Linear(in_features = in_features, out_features = hidden_channels)
-        self.in_projector2 = nn.Linear(in_features = hidden_channels, out_features = hidden_channels)
-        self.out_projector1 = nn.Linear(in_features = hidden_channels, out_features = hidden_channels)
-        self.out_projector2 = nn.Linear(in_features = hidden_channels, out_features = in_features)
+        self.projector1 = nn.Linear(in_features = in_features, out_features = hidden_channels)
+        self.projector2 = nn.Linear(in_features = hidden_channels, out_features = in_features)
 
         self.beta = nn.Parameter(torch.Tensor(self.hidden_channels,
                                               self.hidden_channels))
@@ -54,23 +52,15 @@ class InvLinear(nn.Module):
 
     def reset_parameters(self):
 
-        if self.in_projector1.bias is not None:
-            init.zeros_(self.in_projector1.bias)
+        if self.projector1.bias is not None:
+            init.zeros_(self.projector1.bias)
 
-        if self.in_projector2.bias is not None:
-            init.zeros_(self.in_projector2.bias)
-
-        if self.out_projector1.bias is not None:
-            init.zeros_(self.out_projector1.bias)
-
-        if self.out_projector2.bias is not None:
-            init.zeros_(self.out_projector2.bias)
+        if self.projector2.bias is not None:
+            init.zeros_(self.projector2.bias)
 
         init.xavier_uniform_(self.beta)
-        init.xavier_uniform_(self.in_projector1.weight)
-        init.xavier_uniform_(self.in_projector2.weight)
-        init.xavier_uniform_(self.out_projector1.weight)
-        init.xavier_uniform_(self.out_projector2.weight)
+        init.xavier_uniform_(self.projector1.weight)
+        init.xavier_uniform_(self.projector2.weight)
         
         if self.bias is not None:
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.beta)
@@ -92,49 +82,44 @@ class InvLinear(nn.Module):
         Y: N vectors of dimension out_features (tensor with shape (N, out_features))
         """
 
-        X = self.in_projector1(X)
+        X = self.projector1(X)
         X = F.dropout(X, self.dropout)
-        # X = self.in_projector2(X)
-        # X = F.dropout(X, self.dropout)
-
         N, M, _ = X.shape
         device = X.device
         y = torch.zeros(N, self.hidden_channels).to(device)
         if mask is None:
             mask = torch.ones(N, M).bool().to(device)      
 
-        if self.reduction == 'mean':
-            sizes = mask.float().sum(dim=1).unsqueeze(1)
-            Z = X * mask.unsqueeze(2).float()
-            y = (Z.sum(dim=1) @ self.beta)/sizes
+        # if self.reduction == 'mean':
+        sizes = mask.float().sum(dim=1).unsqueeze(1)
+        Z = X * mask.unsqueeze(2).float()
+        y = (Z.sum(dim=1) @ self.beta)/sizes
 
-        elif self.reduction == 'sum':
-            Z = X * mask.unsqueeze(2).float()
-            y = Z.sum(dim=1) @ self.beta
+        # elif self.reduction == 'sum':
+        #     Z = X * mask.unsqueeze(2).float()
+        #     y = Z.sum(dim=1) @ self.beta
 
-        elif self.reduction == 'max':
-            Z = X.clone()
-            Z[~mask] = float('-Inf')
-            y = Z.max(dim=1)[0] @ self.beta
+        # elif self.reduction == 'max':
+        #     Z = X.clone()
+        #     Z[~mask] = float('-Inf')
+        #     y = Z.max(dim=1)[0] @ self.beta
 
-        else:  # min
-            Z = X.clone()
-            Z[~mask] = float('Inf')
-            y = Z.min(dim=1)[0] @ self.beta
+        # else:  # min
+        #     Z = X.clone()
+        #     Z[~mask] = float('Inf')
+        #     y = Z.min(dim=1)[0] @ self.beta
 
         if self.bias is not None:
             y += self.bias
 
-        # y = F.dropout(y, self.dropout)
-        # y = self.out_projector1(y)
         y = F.dropout(y, self.dropout)
-        y = self.out_projector2(y)
+        y = self.projector2(y)
         y = F.dropout(y, self.dropout)
 
-        if self.mode == 0:
-            return F.softplus(y)
+        # if self.mode == 0:
+        return F.softplus(y)
         
-        return y
+        # return y
 
     def extra_repr(self):
         return 'in_features={}, out_features={}, bias={}, reduction={}'.format(
@@ -195,10 +180,10 @@ class GCN(nn.Module):
         if self.mode == 0:
             x = self.last_bn(x)
             x = F.softplus(x)
-        elif self.mode == 2:
-            x = self.last_bn(x)
-            # x = F.softplus(x)
-            x = F.relu(x)
+        # elif self.mode == 2:
+        #     x = self.last_bn(x)
+        #     # x = F.softplus(x)
+        #     x = F.relu(x)
         return x
     
 class GraphModel(nn.Module):
@@ -236,51 +221,51 @@ def eval_acc(y_true, y_pred):
 
     return sum(acc_list)/len(acc_list)
 
-class BetaIntersection(nn.Module):
-    def __init__(self, dim):
-        super(BetaIntersection, self).__init__()
-        self.dim = dim
-        self.layer1 = nn.Linear(2 * self.dim, 2 * self.dim)
-        self.layer2 = nn.Linear(2 * self.dim, self.dim)
+# class BetaIntersection(nn.Module):
+#     def __init__(self, dim):
+#         super(BetaIntersection, self).__init__()
+#         self.dim = dim
+#         self.layer1 = nn.Linear(2 * self.dim, 2 * self.dim)
+#         self.layer2 = nn.Linear(2 * self.dim, self.dim)
 
-        nn.init.xavier_uniform_(self.layer1.weight)
-        nn.init.xavier_uniform_(self.layer2.weight)
+#         nn.init.xavier_uniform_(self.layer1.weight)
+#         nn.init.xavier_uniform_(self.layer2.weight)
 
-    def forward(self, alpha_embeddings, beta_embeddings):
-        all_embeddings = torch.cat([alpha_embeddings, beta_embeddings], dim=-1)
-        layer1_act = F.relu(self.layer1(all_embeddings)) # (num_conj, batch_size, 2 * dim)
-        attention = F.softmax(self.layer2(layer1_act), dim=-2) # (num_conj, batch_size, dim)
+#     def forward(self, alpha_embeddings, beta_embeddings):
+#         all_embeddings = torch.cat([alpha_embeddings, beta_embeddings], dim=-1)
+#         layer1_act = F.relu(self.layer1(all_embeddings)) # (num_conj, batch_size, 2 * dim)
+#         attention = F.softmax(self.layer2(layer1_act), dim=-2) # (num_conj, batch_size, dim)
 
-        alpha_embedding = torch.sum(attention * alpha_embeddings, dim=-2)
-        beta_embedding = torch.sum(attention * beta_embeddings, dim=-2)
+#         alpha_embedding = torch.sum(attention * alpha_embeddings, dim=-2)
+#         beta_embedding = torch.sum(attention * beta_embeddings, dim=-2)
 
-        return alpha_embedding, beta_embedding
+#         return alpha_embedding, beta_embedding
         
-    def mapper(self, sample_alpha_embeddings, sample_beta_embeddings, class_alpha_embeddings, class_beta_embeddings):
-        # 假设 sample_alpha_embeddings 的形状为 (batch_size, dim)
-        # 假设 class_alpha_embeddings 的形状为 (num_classes, dim)
+#     def mapper(self, sample_alpha_embeddings, sample_beta_embeddings, class_alpha_embeddings, class_beta_embeddings):
+#         # 假设 sample_alpha_embeddings 的形状为 (batch_size, dim)
+#         # 假设 class_alpha_embeddings 的形状为 (num_classes, dim)
 
-        # 将样本嵌入扩展到每个类别
-        expanded_sample_alpha = sample_alpha_embeddings.unsqueeze(1).expand(-1, class_alpha_embeddings.size(0), -1)
-        expanded_sample_beta = sample_beta_embeddings.unsqueeze(1).expand(-1, class_beta_embeddings.size(0), -1)
+#         # 将样本嵌入扩展到每个类别
+#         expanded_sample_alpha = sample_alpha_embeddings.unsqueeze(1).expand(-1, class_alpha_embeddings.size(0), -1)
+#         expanded_sample_beta = sample_beta_embeddings.unsqueeze(1).expand(-1, class_beta_embeddings.size(0), -1)
 
-        # 将类别嵌入扩展到每个样本
-        expanded_class_alpha = class_alpha_embeddings.unsqueeze(0).expand(sample_alpha_embeddings.size(0), -1, -1)
-        expanded_class_beta = class_beta_embeddings.unsqueeze(0).expand(sample_beta_embeddings.size(0), -1, -1)
+#         # 将类别嵌入扩展到每个样本
+#         expanded_class_alpha = class_alpha_embeddings.unsqueeze(0).expand(sample_alpha_embeddings.size(0), -1, -1)
+#         expanded_class_beta = class_beta_embeddings.unsqueeze(0).expand(sample_beta_embeddings.size(0), -1, -1)
         
-        # 结合样本嵌入和类别嵌入
-        all_alpha_embeddings = torch.cat([expanded_sample_alpha, expanded_class_alpha], dim=-1).view(sample_beta_embeddings.size(0), class_alpha_embeddings.size(0), 2, -1)
-        all_beta_embeddings = torch.cat([expanded_sample_beta, expanded_class_beta], dim=-1).view(sample_beta_embeddings.size(0), class_alpha_embeddings.size(0), 2, -1)
+#         # 结合样本嵌入和类别嵌入
+#         all_alpha_embeddings = torch.cat([expanded_sample_alpha, expanded_class_alpha], dim=-1).view(sample_beta_embeddings.size(0), class_alpha_embeddings.size(0), 2, -1)
+#         all_beta_embeddings = torch.cat([expanded_sample_beta, expanded_class_beta], dim=-1).view(sample_beta_embeddings.size(0), class_alpha_embeddings.size(0), 2, -1)
 
-        # 应用神经网络层
-        layer1_act = F.relu(self.layer1(torch.cat([all_alpha_embeddings, all_beta_embeddings], dim=-1)))
-        attention = F.softmax(self.layer2(layer1_act), dim=-2)  # 注意维度的变化
+#         # 应用神经网络层
+#         layer1_act = F.relu(self.layer1(torch.cat([all_alpha_embeddings, all_beta_embeddings], dim=-1)))
+#         attention = F.softmax(self.layer2(layer1_act), dim=-2)  # 注意维度的变化
 
-        # 计算交集
-        alpha_embedding = torch.sum(attention * all_alpha_embeddings, dim=-2)
-        beta_embedding = torch.sum(attention * all_beta_embeddings, dim=-2)
+#         # 计算交集
+#         alpha_embedding = torch.sum(attention * all_alpha_embeddings, dim=-2)
+#         beta_embedding = torch.sum(attention * all_beta_embeddings, dim=-2)
 
-        return alpha_embedding, beta_embedding
+#         return alpha_embedding, beta_embedding
     
 
 class MLP(nn.Module):
