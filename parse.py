@@ -28,7 +28,7 @@ def parser_add_main_args(parser):
     # training
     parser.add_argument('--weight_decay', type=float, default=0.0005)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--lr', type=float, default=0.01) ## 0.001 for citeseer
+    parser.add_argument('--lr', type=float, default=0.0005) ## 0.001 for citeseer
     parser.add_argument('--use_bn', action='store_true', help='use batch norm')
 
 
@@ -48,3 +48,8 @@ def parser_add_main_args(parser):
     parser.add_argument('--fix', action='store_true')
 
     parser.add_argument('--number_nodes', default=100, type=int)
+
+    parser.add_argument('--b2e_lr', default = 0.0005, type=float)
+    parser.add_argument('--b2e_layers', default = 3, type=int)
+    parser.add_argument('--b2e_dropout', default = 0.4, type=float)
+    parser.add_argument('--u_hidden', default = 64, type=int)
