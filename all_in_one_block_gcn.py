@@ -53,6 +53,8 @@ else:
 dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
 
 name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
+if os.path.exists(f'./result/{args.dataset}/{args.prefix}/{name}_comb.pth'):
+    exit(1)
 
 num_features = args.hidden_channels
 
@@ -385,7 +387,7 @@ for run in range(args.runs):
 def save_result(results, postfix):
 
     os.makedirs(f'./result/{args.dataset}/{args.prefix}/', exist_ok = True)
-    torch.save(results, f'./result/{args.dataset}/{args.prefix}/{name}.pth')
+    torch.save(results, f'./result/{args.dataset}/{args.prefix}/{name}_{postfix}.pth')
 
     for r in results:
         print('------------------------------------------------------')
@@ -404,7 +406,7 @@ def save_result(results, postfix):
         fpr.append(r['best_fpr']*100)
         auroc.append(r['best_auroc']*100)
 
-    print(f'------------------summary------------------')
+    print(f'------------------summary_{postfix}------------------')
     print(f'Acc: {np.array(acc).mean():.2f} ± {np.array(acc).std():.2f}')
     print(f'AURC: {np.array(aurc).mean():.2f} ± {np.array(aurc).std():.2f}')
     print(f'fpr: {np.array(fpr).mean():.2f} ± {np.array(fpr).std():.2f}')
