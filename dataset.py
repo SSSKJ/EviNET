@@ -470,12 +470,12 @@ def load_graph_dataset(data_dir, dataname, ood_type):
             center_node_mask_ood_te = (label < class_t)
         dataset_ood_tr.node_idx = idx[center_node_mask_ood_tr]
         dataset_ood_te.node_idx = idx[center_node_mask_ood_te]
-
-        dataset_ind.y = max_label - dataset_ind.y
-        dataset_ood_tr.y = max_label - dataset_ood_tr.y
-        dataset_ood_te.y = max_label - dataset_ood_te.y
     else:
         raise NotImplementedError
+    
+    dataset_ind.y = max_label - dataset_ind.y
+    dataset_ood_tr.y = max_label - dataset_ood_tr.y
+    dataset_ood_te.y = max_label - dataset_ood_te.y
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
