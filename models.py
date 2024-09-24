@@ -116,7 +116,6 @@ class InvLinear(nn.Module):
         y = self.projector2(y)
         y = F.dropout(y, self.dropout)
 
-        # if self.mode == 0:
         return F.softplus(y)
         
         # return y
@@ -177,13 +176,8 @@ class GCN(nn.Module):
             x = self.activation(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.convs[-1](x, edge_index)
-        if self.mode == 0:
-            x = self.last_bn(x)
-            x = F.softplus(x)
-        # elif self.mode == 2:
-        #     x = self.last_bn(x)
-        #     # x = F.softplus(x)
-        #     x = F.relu(x)
+        x = self.last_bn(x)
+        x = F.softplus(x)
         return x
     
 class GraphModel(nn.Module):
