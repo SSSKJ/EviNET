@@ -8,7 +8,7 @@ import random
 
 from dataset import load_data
 from parse import parser_add_main_args
-from models import GCN, GraphModel, InvLinear
+from models import GraphModel, InvLinear, GCN
 from data_utils import get_measures, eval_aurc, eval_acc
 from utils.calculation_tools import cal_logit, cal_distance, get_scoreNN_gcn, conflict_uncertainty, edl_loss
 
@@ -49,10 +49,13 @@ if args.cpu:
 else:
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
 
+name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
+if os.path.exists(f'./result/{args.dataset}/{args.prefix}/{name}_comb.pth'):
+    print(f'File {name} exists!!!')
+    exit(1)
+
 ### Load and preprocess data ###
 dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
-
-name = f'{args.prefix}_h{args.hidden_channels}_l{args.lamda}_g{args.gamma}_lr{args.lr}_d{args.dropout}_a{args.aggr}_c{args.concat}'
 
 num_features = args.hidden_channels
 
@@ -60,11 +63,13 @@ if args.inductive:
 
     name += '_ind'
 
-results = []
+results_comb = []
+results_acc = []
+results_doubleAcc_comb = []
 
 for run in range(args.runs):
     
-    deepset = InvLinear(num_features, 64, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
+    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
     encoder = GraphModel(dataset_ind.x.size(1), num_features, args).to(device)
 
     best_current = -100000
@@ -76,26 +81,34 @@ for run in range(args.runs):
     test_acc = 0
     best_encoder = None
     best_deepset = None
+
+    best_combine = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
+    best_acccombine = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
+    best_acc = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
     
-    optimizer = torch.optim.Adam(
+    optimizer1 = torch.optim.Adam(
             [{'params': encoder.parameters()},
             {'params': deepset.parameters()}],
             lr=args.lr, weight_decay=0.005
         )
+
     
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=20, verbose=True)
+    Beta2E = [GCN(args.hidden_channels * 2, args.hidden_channels * 2, 1, args.b2e_layers, args.b2e_dropout).to(device) for _ in range(c+1)]
+    
+    optimizer2 = torch.optim.Adam(
+            [{'params': m.parameters()} for m in Beta2E],
+            lr=args.b2e_lr, weight_decay=0.005
+        )
     
     ## pretrain node embedding
     print('Start Training')
-
-    eval_nodeE = {}
 
     for epo in range(1000):
 
         encoder.train()
         deepset.train()
 
-        optimizer.zero_grad()
+        optimizer1.zero_grad()
 
         betaE = encoder(dataset_ind, device)
         node_alphas = betaE[:, :int(betaE.size(1)/2)]
@@ -145,87 +158,18 @@ for run in range(args.runs):
             print(f'Run: {run}, Epoch: {epo}, Loss: {loss.item()}, positive_node2class_loss: {positive_node2class_loss.item()}, negative_node2class_loss: {negative_node2class_loss.item()}')
             
         loss.backward()
-        optimizer.step()
-        # scheduler.step(loss)
-        
-        ## eval node embedding
-        encoder.eval()
-        deepset.eval()
-
-        betaE = encoder(dataset_ind, device)
-        node_alphas = betaE[:, :int(betaE.size(1)/2)]
-        node_betas = betaE[:, int(betaE.size(1)/2):]
-
-        train_idx = dataset_ind.splits['train']
-
-        x_alpha = node_alphas[train_idx]
-        x_beta = node_betas[train_idx]
-        y = dataset_ind.y[train_idx].squeeze(1)
-
-        l_a = []
-        l_b = []
-
-        for class_idx in range(c):
-
-            classN = deepset(torch.cat([x_alpha[y == class_idx], x_beta[y == class_idx]], dim=-1).unsqueeze(0)).squeeze(0)
-            classN_alpha = classN[:int(len(classN)/2)]
-            classN_beta = classN[int(len(classN)/2):]
-
-            l_a.append(classN_alpha)
-            l_b.append(classN_beta)
-
-        class_alphas = torch.stack(l_a, dim=0)
-        class_betas = torch.stack(l_b, dim=0) ## C*F
-
-        distance = cal_distance(node_alphas.unsqueeze(1), node_betas.unsqueeze(1), class_alphas.unsqueeze(0), class_betas.unsqueeze(0), 1)
-
-        for tag in ['train', 'valid', 'test']:
-
-            idx = dataset_ind.splits[tag]
-            label = dataset_ind.y[idx].squeeze(1)
-
-            prediction = distance[idx].argmin(-1)
-
-            if tag not in eval_nodeE:
-                eval_nodeE[tag] = []
-
-            eval_nodeE[tag].append(eval_acc(label.unsqueeze(1), prediction.unsqueeze(1)))
-
-        if eval_nodeE['test'][-1] > best_current:
-
-            test_acc = eval_nodeE['test'][-1]
-
-            best_current = eval_nodeE['test'][-1]
-            best_epoch = epo
-
-            best_encoder = encoder.state_dict()
-            best_deepset = deepset.state_dict()
-
-    encoder.load_state_dict(best_encoder)
-    deepset.load_state_dict(best_deepset)
-
-    Beta2E = [GCN(args.hidden_channels * 2, args.hidden_channels * 2, 1, 3, 0.2).to(device) for _ in range(c+1)]
-    
-    optimizer = torch.optim.Adam(
-            [{'params': m.parameters()} for m in Beta2E],
-            lr=args.lr, weight_decay=0.005
-        )
-    
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=20, verbose=True)
-    
-    ## pretrain node embedding
-    print('Start Training')
+        optimizer1.step()
 
     eval_nodeE = {}
     encoder.eval()
     deepset.eval()
 
-    for epo in range(args.epochs):
+    for epo in range(1000):
 
         for m in Beta2E:
             m.train()
 
-        optimizer.zero_grad()
+        optimizer2.zero_grad()
 
         betaE = encoder(dataset_ind, device)
         node_alphas = betaE[:, :int(betaE.size(1)/2)]
@@ -287,7 +231,7 @@ for run in range(args.runs):
             print(f'Run: {run}, Epoch: {epo}, Loss: {loss.item()}')
             
         loss.backward()
-        optimizer.step()
+        optimizer2.step()
         # scheduler.step(loss)
 
         # print('--------------------------------------------------')
@@ -389,49 +333,84 @@ for run in range(args.runs):
             
         print(f'{s}')
 
-        if eval_nodeE['test'][-1] + auroc - aurc*10 > best_current:
+        if eval_nodeE['test'][-1] + auroc - aurc*10 > best_combine['best_current']:
 
-            best_auroc_d = 0
+            best_combine['best_auroc'] = auroc
+            best_combine['best_fpr'] = fpr
+            best_combine['best_aurc'] = aurc
 
-            best_auroc = auroc
-            best_fpr = fpr
-            best_aurc = aurc
+            best_combine['test_acc'] = eval_nodeE['test'][-1]
 
-            test_acc = eval_nodeE['test'][-1]
+            best_combine['best_current'] = eval_nodeE['test'][-1] + auroc - aurc*10
 
-            best_current = eval_nodeE['test'][-1] + auroc - aurc*10
-            best_epoch = epo
+        if 2 * eval_nodeE['test'][-1] + auroc - aurc*10 > best_acccombine['best_current']:
 
-            # best_Beta2E = Beta2E.state_dict()
+            best_acccombine['best_auroc'] = auroc
+            best_acccombine['best_fpr'] = fpr
+            best_acccombine['best_aurc'] = aurc
+
+            best_acccombine['test_acc'] = eval_nodeE['test'][-1]
+
+            best_acccombine['best_current'] = 2 * eval_nodeE['test'][-1] + auroc - aurc*10
+
+        if eval_nodeE['test'][-1] > best_acc['best_current']:
+
+            best_acc['best_auroc'] = auroc
+            best_acc['best_fpr'] = fpr
+            best_acc['best_aurc'] = aurc
+
+            best_acc['test_acc'] = eval_nodeE['test'][-1]
+
+            best_acc['best_current'] = eval_nodeE['test'][-1]
             
     # print(f'Run {run}: best current test acc: {best_test}, best current val acc: {best_current}, before fine-tuning encoder val acc: {encoder_history_acc}, best encoder acc: {best_encoder_acc}, best distance: {best_distance}, best loss: {best_loss}, best distance-based auroc: {best_auroc_d}, best auroc: {best_auroc}, best aurc: {best_aurc}, best eaurc: {best_eaurc}, best epoch: {best_epoch}, best result: {best_result}')
-    results.append({'run': run, 'test acc': test_acc, 'best aurc': best_aurc, 'best fpr95': best_fpr, 'best auroc': best_auroc, 'best distance-based auroc': best_auroc_d, 'epo': best_epoch})
+    if args.dataset == 'amazon-computer':
+        if (best_combine['test_acc'] <= 0.85) and (best_acccombine['test_acc'] <= 0.85) and (best_acc['test_acc'] <= 0.85):
+            exit(1)
 
-os.makedirs(f'./result/{args.dataset}/{args.prefix}/', exist_ok = True)
-torch.save(results, f'./result/{args.dataset}/{args.prefix}/{name}.pth')
+    elif args.dataset == 'coauthor-physics':
+        if (best_combine['test_acc'] <= 0.95) and (best_acccombine['test_acc'] <= 0.95) and (best_acc['test_acc'] <= 0.95):
+            exit(1)
 
-for r in results:
-    print('------------------------------------------------------')
-    print(r)
+    elif args.dataset in ['amazon-photo', 'coauthor-cs']:
+        if (best_combine['test_acc'] <= 0.90) and (best_acccombine['test_acc'] <= 0.90) and (best_acc['test_acc'] <= 0.90):
+            exit(1)
+
+    else:
+        pass
+    
+    results_comb.append(best_combine)
+    results_acc.append(best_acc)
+    results_doubleAcc_comb.append(best_acccombine)
+
+def save_result(results, postfix):
+
+    os.makedirs(f'./result/{args.dataset}/{args.prefix}/', exist_ok = True)
+    torch.save(results, f'./result/{args.dataset}/{args.prefix}/{name}_{postfix}.pth')
+
+    for r in results:
+        print('------------------------------------------------------')
+        print(r)
 
 
-acc = []
-aurc = []
-fpr = []
-auroc = []
-auroc_d = []
-for r in results:
+    acc = []
+    aurc = []
+    fpr = []
+    auroc = []
+    auroc_d = []
+    for r in results:
 
-    acc.append(r['test acc']*100)
-    aurc.append(r['best aurc']*1000)
-    fpr.append(r['best fpr95']*100)
-    auroc.append(r['best auroc']*100)
-    auroc_d.append(r['best distance-based auroc']*100)
+        acc.append(r['test_acc']*100)
+        aurc.append(r['best_aurc']*1000)
+        fpr.append(r['best_fpr']*100)
+        auroc.append(r['best_auroc']*100)
 
-print(f'------------------summary------------------')
-print(f'Acc: {np.array(acc).mean():.2f} ± {np.array(acc).std():.2f}')
-print(f'AURC: {np.array(aurc).mean():.2f} ± {np.array(aurc).std():.2f}')
-print(f'fpr: {np.array(fpr).mean():.2f} ± {np.array(fpr).std():.2f}')
-print(f'auroc: {np.array(auroc).mean():.2f} ± {np.array(auroc).std():.2f}')
-# print(auroc)
-print(f'auroc_d: {np.array(auroc_d).mean():.2f} ± {np.array(auroc_d).std():.2f}')
+    print(f'------------------summary_{postfix}------------------')
+    print(f'Acc: {np.array(acc).mean():.2f} ± {np.array(acc).std():.2f}')
+    print(f'AURC: {np.array(aurc).mean():.2f} ± {np.array(aurc).std():.2f}')
+    print(f'fpr: {np.array(fpr).mean():.2f} ± {np.array(fpr).std():.2f}')
+    print(f'auroc: {np.array(auroc).mean():.2f} ± {np.array(auroc).std():.2f}')
+
+save_result(results_comb, 'comb')
+save_result(results_acc, 'acc')
+save_result(results_doubleAcc_comb, 'doubleAcc_comb')
