@@ -49,12 +49,13 @@ if args.cpu:
 else:
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
 
-### Load and preprocess data ###
-dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
-
 name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
 if os.path.exists(f'./result/{args.dataset}/{args.prefix}/{name}_comb.pth'):
+    print(f'File {name} exists!!!')
     exit(1)
+
+### Load and preprocess data ###
+dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
 
 num_features = args.hidden_channels
 
@@ -312,6 +313,9 @@ for run in range(args.runs):
                 evidence.append(Beta2E[class_index](x.to(device), dataset_ind.edge_index.to(device)))
 
             evidence = torch.concat(evidence, -1)
+
+            if args.fix:
+                evidence[:, -1] = c
 
             ## 计算unknown detection指标
             test_ind_score_conflict, test_ind_score_vacuity = get_scoreNN_gcn(evidence, dataset_ind.splits['test'], args)
