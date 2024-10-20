@@ -50,9 +50,6 @@ else:
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
 
 name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
-if os.path.exists(f'./result/{args.dataset}/{args.prefix}/{name}_comb.pth'):
-    print(f'File {name} exists!!!')
-    exit(1)
 
 ### Load and preprocess data ###
 dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
@@ -81,6 +78,10 @@ for run in range(args.runs):
     test_acc = 0
     best_encoder = None
     best_deepset = None
+    best_pood = None
+    best_correct = None
+    best_nood = None
+    best_misd = None
 
     best_combine = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
     best_acccombine = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
@@ -288,7 +289,6 @@ for run in range(args.runs):
 
                 eval_nodeE[tag].append(eval_acc(label.unsqueeze(1), prediction.unsqueeze(1)))
 
-            # ## 类的补集的交集
             class_union = deepset(torch.cat([class_alphas, class_betas], dim=-1).unsqueeze(0)).squeeze(0)
             classOther_alpha = class_union[:int(len(class_union)/2)]
             classOther_beta = class_union[int(len(class_union)/2):]
@@ -317,10 +317,8 @@ for run in range(args.runs):
             if args.fix:
                 evidence[:, -1] = c
 
-            ## 计算unknown detection指标
             test_ind_score_conflict, test_ind_score_vacuity = get_scoreNN_gcn(evidence, dataset_ind.splits['test'], args)
 
-            # print(test_ind_score)
             _, test_ood_score_vacuity = get_scoreNN_gcn(evidence, dataset_ood_te.node_idx, args)
 
             pred = evidence[idx, :-1].argmax(-1).cpu()
@@ -347,6 +345,13 @@ for run in range(args.runs):
                 best_combine['test_acc'] = eval_nodeE['test'][-1]
 
                 best_combine['best_current'] = eval_nodeE['test'][-1] + auroc - aurc*10
+
+                best_pood = test_ind_score_vacuity.cpu().detach()
+                best_nood = test_ood_score_vacuity.cpu().detach()
+
+                best_misd = test_ind_score_conflict.cpu().detach()
+                best_correct = correct
+
 
             if 2 * eval_nodeE['test'][-1] + auroc - aurc*10 > best_acccombine['best_current']:
 
@@ -387,6 +392,7 @@ for run in range(args.runs):
     results_comb.append(best_combine)
     results_acc.append(best_acc)
     results_doubleAcc_comb.append(best_acccombine)
+    torch.save({'nood': best_nood, 'pood': best_pood, 'correct': best_correct, 'misd': best_misd}, './scores.pth')
 
 def save_result(results, postfix):
 
@@ -417,5 +423,5 @@ def save_result(results, postfix):
     print(f'auroc: {np.array(auroc).mean():.2f} ± {np.array(auroc).std():.2f}')
 
 save_result(results_comb, 'comb')
-save_result(results_acc, 'acc')
-save_result(results_doubleAcc_comb, 'doubleAcc_comb')
+# save_result(results_acc, 'acc')
+# save_result(results_doubleAcc_comb, 'doubleAcc_comb')
