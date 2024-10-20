@@ -286,7 +286,6 @@ for run in range(args.runs):
 
             eval_nodeE[tag].append(eval_acc(label.unsqueeze(1), prediction.unsqueeze(1)))
 
-        # ## 类的补集的交集
         class_union = deepset(torch.cat([class_alphas, class_betas], dim=-1).unsqueeze(0)).squeeze(0)
         classOther_alpha = class_union[:int(len(class_union)/2)]
         classOther_beta = class_union[int(len(class_union)/2):]
@@ -312,7 +311,6 @@ for run in range(args.runs):
 
         evidence = torch.concat(evidence, -1)
 
-        ## 计算unknown detection指标
         test_ind_score_conflict, test_ind_score_vacuity = get_scoreNN_gcn(evidence, dataset_ind.splits['test'], args)
 
         # print(test_ind_score)
