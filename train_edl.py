@@ -129,9 +129,6 @@ for run in range(args.runs):
         encoder.eval()
 
         evidence = encoder(dataset_ind, device)
-        # print(evidence[dataset_ind.splits['train']])
-        # print(evidence[dataset_ind.splits['test']])
-        # print(evidence[dataset_ood_te.node_idx])
 
         for tag in ['train', 'valid', 'test']:
             idx = dataset_ind.splits[tag]
@@ -143,7 +140,6 @@ for run in range(args.runs):
             if tag not in eval_nodeE:
                 eval_nodeE[tag] = []
 
-            # eval_nodeE[tag].append(sum(np.array(label) == prediction.detach().cpu().numpy()) / len(label))
             eval_nodeE[tag].append(eval_acc(label.unsqueeze(1), prediction.unsqueeze(1)))
 
         s = 'ACC: '
@@ -152,22 +148,15 @@ for run in range(args.runs):
 
             s += f'{tag}: {eval_nodeE[tag][-1]}, '
 
-        ## 计算unknown detection指标
         test_ind_score_conflict, test_ind_score_vacuity = get_score(evidence[dataset_ind.splits['test']], c, args)
-        # print('------------------------------------------------------')
-        # print(test_ind_score_vacuity.mean())
 
-        # print(test_ind_score)
         _, test_ood_score_vacuity = get_score(evidence[dataset_ood_te.node_idx], c, args)
-        # print(test_ood_score_vacuity.mean())
 
         pred = evidence.argmax(-1).cpu()
 
         correct = (pred[dataset_ind.splits['test']] == dataset_ind.y[dataset_ind.splits['test']].view(1, -1).squeeze(0))
         auroc, aupr, fpr, _ = get_measures(test_ind_score_vacuity.cpu().detach(), test_ood_score_vacuity.cpu().detach())
         aurc, _ = eval_aurc(correct, test_ind_score_conflict.cpu().detach())
-        # print(test_ind_score_conflict[correct])
-        # print(test_ind_score_conflict[~correct])
 
         result = {'auroc': auroc, 'aurc': aurc, 'fpr95': fpr}
 
