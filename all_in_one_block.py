@@ -8,7 +8,7 @@ import random
 
 from dataset import load_data
 from parse import parser_add_main_args
-from models import Regularizer, GraphModel, InvLinear
+from models import MLP, GraphModel, InvLinear
 from data_utils import get_measures, eval_aurc, eval_acc
 from utils.calculation_tools import cal_logit, cal_distance, get_scoreNN, conflict_uncertainty, edl_loss
 
@@ -52,7 +52,7 @@ else:
 ### Load and preprocess data ###
 dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
 
-name = f'{args.prefix}_h{args.hidden_channels}_l{args.lamda}_g{args.gamma}_lr{args.lr}_d{args.dropout}_a{args.aggr}_c{args.concat}'
+name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
 
 num_features = args.hidden_channels
 
@@ -64,7 +64,7 @@ results = []
 
 for run in range(args.runs):
     
-    deepset = InvLinear(num_features, 64, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
+    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
     encoder = GraphModel(dataset_ind.x.size(1), num_features, args).to(device)
 
     best_current = -100000
@@ -85,24 +85,7 @@ for run in range(args.runs):
     
     best_Beta2E = None
 
-    Beta2E = nn.Sequential(
-            nn.Linear(in_features=args.hidden_channels * 2, out_features=args.hidden_channels*2),
-            nn.BatchNorm1d(args.hidden_channels*2),
-            nn.ReLU(),
-            nn.Dropout(args.dropout),
-            nn.Linear(args.hidden_channels*2, args.hidden_channels*2),
-            nn.BatchNorm1d(args.hidden_channels*2),
-            nn.ReLU(),
-            nn.Dropout(args.dropout),
-            nn.Linear(args.hidden_channels*2, args.hidden_channels*2),
-            nn.BatchNorm1d(args.hidden_channels*2),
-            nn.ReLU(),
-            nn.Dropout(args.dropout),
-            nn.Linear(args.hidden_channels*2, 1),
-            nn.Softplus(),
-        )
-
-    Beta2E.apply(initialize_weights)
+    Beta2E = MLP(args.hidden_channels * 2, args.hidden_channels * 2, 1, 3, args.dropout).to(device)
     
     Beta2E.to(device)
     
@@ -116,7 +99,7 @@ for run in range(args.runs):
 
     for loop in range(50):
 
-        for epo in range(30):
+        for epo in range(20):
 
             encoder.train()
             deepset.train()
@@ -177,7 +160,7 @@ for run in range(args.runs):
         encoder.eval()
         deepset.eval()
 
-        for epo in range(30):
+        for epo in range(20):
 
             Beta2E.train()
 
@@ -223,10 +206,8 @@ for run in range(args.runs):
 
             expanded_node_cat = node_cat.unsqueeze(1).expand(-1, class_cat.size(0), -1)
 
-            # 将类别嵌入扩展到每个样本
             expanded_class_cat = class_cat.unsqueeze(0).expand(node_cat.size(0), -1, -1)
 
-            # 结合样本嵌入和类别嵌入
             all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1).view(-1, args.hidden_channels * 2)
 
             evidence = Beta2E(all_cat).view(node_cat.size(0), class_cat.size(0))
@@ -300,7 +281,6 @@ for run in range(args.runs):
 
                 eval_nodeE[tag].append(eval_acc(label.unsqueeze(1), prediction.unsqueeze(1)))
 
-            # ## 类的补集的交集
             class_union = deepset(torch.cat([class_alphas, class_betas], dim=-1).unsqueeze(0)).squeeze(0)
             classOther_alpha = class_union[:int(len(class_union)/2)]
             classOther_beta = class_union[int(len(class_union)/2):]
@@ -317,10 +297,8 @@ for run in range(args.runs):
 
                 s += f'{tag}: {eval_nodeE[tag][-1]}, '
 
-            ## 计算unknown detection指标
             test_ind_score_conflict, test_ind_score_vacuity = get_scoreNN(node_alphas[dataset_ind.splits['test']], node_betas[dataset_ind.splits['test']], class_alphas, class_betas, Beta2E, args)
 
-            # print(test_ind_score)
             _, test_ood_score_vacuity = get_scoreNN(node_alphas[dataset_ood_te.node_idx], node_betas[dataset_ood_te.node_idx], class_alphas, class_betas, Beta2E, args)
 
             class_cat = torch.concat([class_alphas, class_betas], dim = -1)
