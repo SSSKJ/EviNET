@@ -38,8 +38,6 @@ def load_data(args):
     else:
         dataset_ind.splits = rand_splits(dataset_ind.node_idx, train_prop=args.train_prop, valid_prop=args.valid_prop)
 
-    # dataset_ind.splits['train'] = torch.concat([dataset_ind.splits['train'], dataset_ind.splits['valid']])
-
     # infer the number of classes for non one-hot and one-hot labels
     c = dataset_ind.y[dataset_ind.node_idx].max().item() + 1
     d = dataset_ind.x.shape[1]
@@ -108,101 +106,42 @@ def load_twitch_dataset(data_dir):
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
-# def load_arxiv_dataset(data_dir, time_bound=[2015,2017], inductive=True):
-#     from ogb.nodeproppred import NodePropPredDataset
+import torch
+from torch_geometric.data import Data
+from torch_sparse import SparseTensor
+import networkx as nx
+from torch_geometric.utils import from_networkx
 
-#     ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
-#     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
-#     node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
-#     label = torch.as_tensor(ogb_dataset.labels).reshape(-1, 1)
-#     year = ogb_dataset.graph['node_year']
+def calculate_num_edges(num_nodes, edge_density):
+    max_possible_edges = num_nodes * (num_nodes - 1) // 2
+    num_edges = int(edge_density * max_possible_edges)
+    return num_edges
 
-#     year_min, year_max = time_bound[0], time_bound[1]
-#     test_year_bound = [2017, 2018, 2019, 2020]
+def load_erdos_renyi_dataset_with_density(num_nodes, edge_density, num_features, num_classes):
+    num_edges = calculate_num_edges(num_nodes, edge_density)
+    print(num_edges)
 
-#     center_node_mask = torch.as_tensor((year <= year_min).squeeze(1), dtype=torch.bool)
-#     if inductive:
-#         ind_edge_index, _ = subgraph(center_node_mask, edge_index)
-#     else:
-#         ind_edge_index = edge_index
+    G = nx.gnm_random_graph(n=num_nodes, m=num_edges)
 
-#     dataset_ind = Data(x=node_feat, edge_index=ind_edge_index, y=label)
-#     idx = torch.arange(label.size(0))
-#     dataset_ind.node_idx = idx[center_node_mask]
+    data = from_networkx(G)
 
-#     center_node_mask = (year <= year_max).squeeze(1) * (year > year_min).squeeze(1)
-#     if inductive:
-#         all_node_mask = (year <= year_max).squeeze(1)
-#         ood_tr_edge_index, _ = subgraph(all_node_mask, edge_index)
-#     else:
-#         ood_tr_edge_index = edge_index
+    node_feat = torch.randn(num_nodes, num_features)
 
-#     dataset_ood_tr = Data(x=node_feat, edge_index=ood_tr_edge_index, y=label)
-#     idx = torch.arange(label.size(0))
-#     dataset_ood_tr.node_idx = idx[center_node_mask]
+    labels = torch.randint(0, num_classes, (num_nodes,)).reshape(-1, 1)
 
-#     dataset_ood_te = []
-#     for i in range(len(test_year_bound)-1):
-#         center_node_mask = (year <= test_year_bound[i+1]).squeeze(1) * (year > test_year_bound[i]).squeeze(1)
-#         if inductive:
-#             all_node_mask = (year <= test_year_bound[i+1]).squeeze(1)
-#             ood_te_edge_index, _ = subgraph(all_node_mask, edge_index)
-#         else:
-#             ood_te_edge_index = edge_index
+    edge_index = SparseTensor(row=data.edge_index[0], col=data.edge_index[1], sparse_sizes=(num_nodes, num_nodes))
 
-#         dataset = Data(x=node_feat, edge_index=ood_te_edge_index, y=label)
-#         idx = torch.arange(label.size(0))
-#         dataset.node_idx = idx[center_node_mask]
-#         dataset_ood_te.append(dataset)
+    node_idx = torch.arange(num_nodes)
 
-#     return dataset_ind, dataset_ood_tr, dataset_ood_te
-
-def load_arxiv_dataset_samples(data_dir, num_samples, inductive=True):
-    from ogb.nodeproppred import NodePropPredDataset
-
-    # 加载数据集
-    ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
-    edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
-    node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
-    label = torch.as_tensor(ogb_dataset.labels).reshape(-1, 1)
-
-    # 构建训练集合
-    if inductive:
-        selected_edge_index, _ = subgraph(torch.ones(label.size(0), dtype=torch.bool), edge_index)
-    else:
-        selected_edge_index = edge_index
-        
-    selected_edge_index = SparseTensor(row=selected_edge_index[0], col=selected_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
-
-    dataset = Data(x=node_feat, edge_index=selected_edge_index, y=label)
-    
-    # 保证每个类别至少有一个样本
-    unique_labels = label.unique()
-    selected_idx = []
-
-    for ul in unique_labels:
-        class_idx = torch.where(label == ul)[0]
-        selected_idx.append(class_idx[torch.randint(len(class_idx), (1,))])
-
-    selected_idx = torch.cat(selected_idx)
-
-    # 在剩余的样本中随机抽取
-    remaining_idx = torch.arange(label.size(0))
-    remaining_idx = remaining_idx[~torch.isin(remaining_idx, selected_idx)]
-    
-    additional_samples_needed = num_samples - len(selected_idx)
-    if additional_samples_needed > 0:
-        additional_idx = remaining_idx[torch.randperm(len(remaining_idx))[:additional_samples_needed]]
-        selected_idx = torch.cat([selected_idx, additional_idx])
-
-    dataset.node_idx = selected_idx
+    dataset = Data(x=node_feat, edge_index=edge_index, y=labels)
+    dataset.node_idx = node_idx
 
     return dataset
+
 
 def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
     from ogb.nodeproppred import NodePropPredDataset
 
-    # 加载数据集
     ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
     node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
@@ -212,7 +151,6 @@ def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
     year_min, year_max = time_bound[0], time_bound[1]
     test_year_bound = [2017, 2018, 2019, 2020]
 
-    # 构建 dataset_ind
     center_node_mask = torch.as_tensor((year <= year_max).squeeze(1), dtype=torch.bool)
     if inductive:
         ind_edge_index, _ = subgraph(center_node_mask, edge_index)
@@ -223,7 +161,6 @@ def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
     idx = torch.arange(label.size(0))
     dataset_ind.node_idx = idx[center_node_mask]
 
-    # 构建 dataset_ood_tr
     center_node_mask = (year <= year_max).squeeze(1) & (year > year_min).squeeze(1)
     if inductive:
         all_node_mask = center_node_mask
@@ -235,7 +172,6 @@ def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
     idx = torch.arange(label.size(0))
     dataset_ood_tr.node_idx = idx[center_node_mask]
 
-    # 构建 dataset_ood_te
     center_node_mask = torch.zeros(year.size(0), dtype=torch.bool)
     for i in range(len(test_year_bound) - 1):
         mask = (year <= test_year_bound[i + 1]).squeeze(1) & (year > test_year_bound[i]).squeeze(1)
@@ -255,27 +191,22 @@ def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
 def load_products_dataset(data_dir, inductive=True):
     from ogb.nodeproppred import NodePropPredDataset
 
-    # 加载数据集
     ogb_dataset = NodePropPredDataset(name='ogbn-products', root=f'{data_dir}ogb')
     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
     node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
     label = torch.as_tensor(ogb_dataset.labels).reshape(-1)
     
-    # 获取所有类别
     unique_labels = torch.unique(label)
     sorted_labels = torch.sort(unique_labels)[0]
     
-    # 定义类别边界
-    ood_te_classes = sorted_labels[-10:]  # 后十个类别作为ood_te
-    ood_tr_class = sorted_labels[-11]  # 倒数第十一个类别作为ood_tr
-    ind_classes = sorted_labels[:-11]  # 其他类别作为dataset_ind
+    ood_te_classes = sorted_labels[-10:]
+    ood_tr_class = sorted_labels[-11]
+    ind_classes = sorted_labels[:-11]
 
-    # 生成掩码
     ind_mask = torch.isin(label, ind_classes)
     ood_tr_mask = label == ood_tr_class
     ood_te_mask = torch.isin(label, ood_te_classes)
 
-    # 构建dataset_ind
     if inductive:
         ind_edge_index, _ = subgraph(ind_mask, edge_index)
     else:
@@ -284,7 +215,6 @@ def load_products_dataset(data_dir, inductive=True):
     dataset_ind = Data(x=node_feat, edge_index=ind_edge_index, y=label)
     dataset_ind.node_idx = torch.arange(label.size(0))[ind_mask]
 
-    # 构建dataset_ood_tr
     if inductive:
         ood_tr_edge_index, _ = subgraph(ood_tr_mask, edge_index)
     else:
@@ -293,7 +223,6 @@ def load_products_dataset(data_dir, inductive=True):
     dataset_ood_tr = Data(x=node_feat, edge_index=ood_tr_edge_index, y=label)
     dataset_ood_tr.node_idx = torch.arange(label.size(0))[ood_tr_mask]
 
-    # 构建dataset_ood_te
     if inductive:
         ood_te_edge_index, _ = subgraph(ood_te_mask, edge_index)
     else:
@@ -478,141 +407,3 @@ def load_graph_dataset(data_dir, dataname, ood_type):
     dataset_ood_te.y = max_label - dataset_ood_te.y
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
-
-# def load_arxiv_dataset(data_dir, class_range=[0,30], graph_partial=True):
-#     from ogb.nodeproppred import NodePropPredDataset
-#
-#     ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}/ogb')
-#     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
-#     x = torch.as_tensor(ogb_dataset.graph['node_feat'])
-#     label = torch.as_tensor(ogb_dataset.labels).reshape(-1, 1)
-#
-#     class_min, class_max = class_range[0], class_range[1]
-#     center_node_mask = (label < class_max).squeeze(1) * (label >= class_min).squeeze(1)
-#     if graph_partial:
-#         all_node_mask = (label < class_max).squeeze(1)
-#         edge_index, _ = subgraph(all_node_mask, edge_index)
-#
-#     split_idx = ogb_dataset.get_idx_split()
-#     tensor_split_idx = {}
-#     idx = torch.arange(label.size(0))
-#     for key in split_idx:
-#         mask = torch.zeros(label.size(0), dtype=torch.bool)
-#         mask[torch.as_tensor(split_idx[key])] = True
-#         tensor_split_idx[key] = idx[mask * center_node_mask]
-#
-#     dataset = Data(x=x, edge_index=edge_index, y=label)
-#     dataset.splits = tensor_split_idx
-#     dataset.node_idx = idx[center_node_mask]
-#
-#     return dataset
-
-
-
-
-# def load_ppi_dataset(data_dir, graph_idx):
-#     transform = T.NormalizeFeatures()
-#     torch_dataset = PPI(root=f'{data_dir}PPI',
-#                               split='train', transform=transform)
-#     dataset = torch_dataset[int(graph_idx)]
-#     dataset.node_idx = torch.arange(dataset.num_nodes)
-#
-#     return dataset
-
-
-#
-# def load_amazon_dataset(data_dir, name):
-#     transform = T.NormalizeFeatures()
-#     if name == 'amazon-photo':
-#         torch_dataset = Amazon(root=f'{data_dir}Amazon',
-#                                name='Photo', transform=transform)
-#     elif name == 'amazon-computer':
-#         torch_dataset = Amazon(root=f'{data_dir}Amazon',
-#                                name='Computers', transform=transform)
-#     dataset = torch_dataset[0]
-#
-#     return dataset
-#
-#
-# def load_coauthor_dataset(data_dir, name):
-#     transform = T.NormalizeFeatures()
-#     if name == 'coauthor-cs':
-#         torch_dataset = Coauthor(root=f'{data_dir}Coauthor',
-#                                  name='CS', transform=transform)
-#     elif name == 'coauthor-physics':
-#         torch_dataset = Coauthor(root=f'{data_dir}Coauthor',
-#                                  name='Physics', transform=transform)
-#     dataset = torch_dataset[0]
-#
-#     return dataset
-#
-#
-# def load_ogb_dataset(data_dir, name):
-#     from ogb.nodeproppred import NodePropPredDataset
-#
-#     ogb_dataset = NodePropPredDataset(name=name, root=f'{data_dir}/ogb')
-#     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
-#     x = torch.as_tensor(ogb_dataset.graph['node_feat'])
-#     label = torch.as_tensor(ogb_dataset.labels).reshape(-1, 1)
-#
-#     def ogb_idx_to_tensor():
-#         split_idx = ogb_dataset.get_idx_split()
-#         tensor_split_idx = {key: torch.as_tensor(
-#             split_idx[key]) for key in split_idx}
-#         return tensor_split_idx
-#
-#     dataset = Data(x=x, edge_index=edge_index, y=label)
-#     dataset.load_fixed_splits = ogb_idx_to_tensor
-#     return dataset
-
-from torch.utils.data import Dataset
-class TrainClassDataset(Dataset):
-    def __init__(self, G, negative_sample_size, tag = 'train'):
-        # queries is a list of (query, query_structure) pairs
-        self.len = len(G.splits[tag])
-        self.tag = tag
-        self.G = G
-        self.negative_sample_size = negative_sample_size
-
-    def __len__(self):
-        return self.len
-    
-    def __getitem__(self, idx):
-        ## 返回一个是class idx，一个是positive sample 即为输入的sample，一个是negative sample，抽取非本类别的样本
-
-        real_idx = self.G.splits[self.tag][idx]
-        real_label = self.G.y[real_idx]
-
-        same_class = (self.G.splits[self.tag])[(self.G.y[self.G.splits[self.tag]] == real_label).squeeze(1)]
-        same_class = same_class.numpy()
-
-        positive_sample = np.random.choice(same_class)
-        while positive_sample == real_idx:
-            positive_sample = np.random.choice(same_class)
-
-        negative_sample_list = []
-        negative_sample_size = 0
-        # list(self.G.splits[self.tag]) - list(same_class)
-        while negative_sample_size < self.negative_sample_size:
-            negative_sample = np.random.choice(self.G.splits[self.tag], size=self.negative_sample_size*2)
-            mask = np.in1d(
-                negative_sample, 
-                same_class, 
-                assume_unique=True, 
-                invert=True
-            )
-            negative_sample = negative_sample[mask]
-            negative_sample_list.append(negative_sample)
-            negative_sample_size += negative_sample.size
-        # print(negative_sample_list)
-        negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
-        negative_sample = torch.from_numpy(negative_sample)
-        positive_sample = torch.LongTensor([positive_sample])
-        return torch.LongTensor([real_idx]), positive_sample, negative_sample, same_class
-    
-    @staticmethod
-    def collate_fn(data):
-        class_idx = torch.cat([_[0] for _ in data], dim=0)
-        positive_sample = torch.cat([_[1] for _ in data], dim=0)
-        negative_sample = torch.stack([_[2] for _ in data], dim=0)
-        return class_idx, positive_sample, negative_sample
