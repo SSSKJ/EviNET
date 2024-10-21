@@ -278,7 +278,11 @@ def get_measures(_pos, _neg, recall_level=0.95):
     labels = np.zeros(len(examples), dtype=np.int32)
     labels[:len(pos)] += 1
 
-    auroc = roc_auc_score(labels, examples)
+    try:
+        auroc = roc_auc_score(labels, examples)
+    except:
+        examples = np.nan_to_num(examples, nan=0.0, posinf=0.0, neginf=0.0)
+        auroc = roc_auc_score(labels, examples)
     aupr = average_precision_score(labels, examples)
     fpr, threshould = fpr_and_fdr_at_recall(labels, examples, recall_level)
 
