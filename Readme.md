@@ -13,7 +13,9 @@ This repository contains the code for **Evidential Reasoning Network(EviNet)**, 
 1. **Dissonance Reasoning (M1)**: Detects misclassifications by computing a **dissonance score** that measures conflicting evidence, indicating samples that belong to multiple known classes.
 2. **Vacuity Reasoning (M2)**: Identifies OOD data by detecting a **lack of evidence** for known classes, using logical negation to create implicit support regions for novel classes.
 
-<img width="600" alt="image" src="pic/Modules.png">
+<p align="center">
+  <img src="pic/Modules.png" alt="image" width="600">
+</p>
 
 EviNet achieves robust performance by balancing **in-distribution classification, misclassification detection, and OOD detection**. The framework provides support regions for known and novel classes via logical reasoning, helping users handle uncertainties in real-world scenarios.
 
