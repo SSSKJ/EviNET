@@ -44,7 +44,7 @@ For reproducing EviNet results in  Table 1
 bash run.sh
 ```
 
-For reproducing Table 2
+For reproducing Table 2 and Table 3
 
 ```bash
 bash run_ablation.sh
