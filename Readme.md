@@ -52,7 +52,7 @@ bash run_ablation.sh
 
 
 
-The results can be found in xxx
+The results can be found in under ./baseline/results/ for baseline and ./results/ for EviNet and ablation studies.
 
 ### 
 
