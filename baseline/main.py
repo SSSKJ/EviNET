@@ -140,8 +140,6 @@ for run in range(args.runs):
         model = OE(d, c, args).to(device)
     elif args.method == "ODIN":
         model = ODIN(d, c, args).to(device)
-    elif args.method == "Mahalanobis":
-        model = Mahalanobis(d, c, args).to(device)
 
     if args.dataset in ('proteins', 'ppi'):
         criterion = nn.BCEWithLogitsLoss()
@@ -218,7 +216,7 @@ for run in range(args.runs):
                       f'Valid: {100 * result[1]:.2f}%, '
                       f'Test: {100 * result[2]:.2f}%')
         else:
-            if args.method == "ODIN" or args.method == "Mahalanobis":
+            if args.method == "ODIN":
                 if epoch == args.epochs - 1:
                     tick = time.time()
                     result = evaluate_detect(model, dataset_ind, dataset_ood_te, criterion, eval_func, args, device)
@@ -230,7 +228,7 @@ for run in range(args.runs):
                           f'AURC: {100 * result[1]*10:.2f}%, '
                           f'FPR95: {100 * result[2]:.2f}%, '
                           f'Test Score: {100 * result[-2]:.2f}%')
-                    odin_r.append({'Acc': 100 * result[-2], 'AURC': 100 * result[1]*10, 'FPR95': 100 * result[2], 'AUROC': 100 * result[0]})
+                    odin_r.append({'AUROC': result[0], 'AURC': result[1], 'FPR95': result[2], 'Acc': result[-2]})
                 else:
                     print(f'Epoch: {epoch:02d}, '
                           f'Loss: {loss:.4f}, ')
@@ -252,13 +250,14 @@ for run in range(args.runs):
                           f'Test Score: {100 * result[-2]:.2f}%')
 
         torch.cuda.empty_cache()
-    if args.method != "ODIN" and args.method != "Mahalanobis":
+    if args.method != "ODIN":
         logger.print_statistics(run)
 
-if args.method != "ODIN" and args.method != "Mahalanobis":
+if args.method != "ODIN":
     results = logger.print_statistics()
 else:
-    results = torch.tensor(result[:-1]).unsqueeze(0) * 100
+    results = torch.tensor([list(r.values()) for r in odin_r], dtype=torch.float) * 100
+
 
 ### Save results ###
 import os
@@ -268,7 +267,6 @@ if args.dataset in ('cora', 'amazon-photo', 'coauthor-cs'):
     filename = f'results/{args.dataset}-{args.ood_type}/{args.method}.csv'
     if args.method == 'ODIN':
         filename = f'results/{args.dataset}-{args.ood_type}/{args.method}_{args.prefix}.csv'
-        torch.save(odin_r, filename.replace('csv', 'pth'))
 else:
     if not os.path.exists(f'results/{args.dataset}'):
         os.makedirs(f'results/{args.dataset}')
@@ -276,12 +274,11 @@ else:
         filename = f'results/{args.dataset}/{args.method}_{args.GPN_detect_type}.csv'
     elif args.method == 'ODIN':
         filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
-        torch.save(odin_r, filename.replace('csv', 'pth'))
     else:
         filename = f'results/{args.dataset}/{args.method}.csv'
 print(f"Saving results to {filename}")
 with open(f"{filename}", 'a+') as write_obj:
-    if args.method == "ODIN" or args.method == "Mahalanobis":
+    if args.method == "ODIN":
         write_obj.write(f"{args.backbone} {args.T} {args.noise} {args.lamda}\n")
     else:
         write_obj.write(f"{args.backbone} {args.m_in} {args.m_out} {args.lamda}\n")
