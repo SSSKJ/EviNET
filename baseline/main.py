@@ -261,21 +261,13 @@ else:
 
 ### Save results ###
 import os
-if args.dataset in ('cora', 'amazon-photo', 'coauthor-cs'):
-    if not os.path.exists(f'results/{args.dataset}-{args.ood_type}'):
-        os.makedirs(f'results/{args.dataset}-{args.ood_type}')
-    filename = f'results/{args.dataset}-{args.ood_type}/{args.method}.csv'
-    if args.method == 'ODIN':
-        filename = f'results/{args.dataset}-{args.ood_type}/{args.method}_{args.prefix}.csv'
+
+if not os.path.exists(f'results/{args.dataset}'):
+    os.makedirs(f'results/{args.dataset}')
+if args.method == 'ODIN':
+    filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
 else:
-    if not os.path.exists(f'results/{args.dataset}'):
-        os.makedirs(f'results/{args.dataset}')
-    if args.method == 'GPN':
-        filename = f'results/{args.dataset}/{args.method}_{args.GPN_detect_type}.csv'
-    elif args.method == 'ODIN':
-        filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
-    else:
-        filename = f'results/{args.dataset}/{args.method}.csv'
+    filename = f'results/{args.dataset}/{args.method}.csv'
 print(f"Saving results to {filename}")
 with open(f"{filename}", 'a+') as write_obj:
     if args.method == "ODIN":
@@ -291,4 +283,3 @@ with open(f"{filename}", 'a+') as write_obj:
         write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f}\n')
     r = results[:, -1]
     write_obj.write(f'In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')
-    write_obj.write(f'train time:{np.mean(train_time):.4f} inference time:{np.mean(inference_time):.4f}\n')
