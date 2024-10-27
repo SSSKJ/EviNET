@@ -10,14 +10,11 @@ from dataset import load_data
 from parse import parser_add_main_args
 from models import MLP, GraphModel, InvLinear
 from data_utils import get_measures, eval_aurc, eval_acc
-from utils.calculation_tools import cal_logit, cal_distance, get_scoreNN, conflict_uncertainty, edl_loss
+from utils.calculation_tools import cal_logit, get_scoreNN, edl_loss
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import one_hot
-from torch_geometric.nn import GCNConv
-from torch.nn import init
 
 # NOTE: for consistent data splits, see data_utils.rand_train_test_idx
 def fix_seed(seed):
@@ -26,15 +23,6 @@ def fix_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
-
-def initialize_weights(module):
-    if isinstance(module, nn.Linear):
-        init.xavier_uniform_(module.weight)
-        if module.bias is not None:
-            init.zeros_(module.bias)
-    elif isinstance(module, nn.BatchNorm1d):
-        init.ones_(module.weight)
-        init.zeros_(module.bias)
 
 ### Parse args ###
 parser = argparse.ArgumentParser(description='General Training Pipeline')
@@ -52,40 +40,32 @@ else:
 ### Load and preprocess data ###
 dataset_ind, dataset_ood_tr, dataset_ood_te, c, d = load_data(args)
 
-name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}_a{args.aggr}'
+name = f'{args.prefix}_h{args.hidden_channels}_uh{args.u_hidden}_g{args.gamma}_lr{args.lr}_blr{args.b2e_lr}_d{args.dropout}_bd{args.b2e_dropout}_l{args.b2e_layers}'
 
 num_features = args.hidden_channels
-
-if args.inductive:
-
-    name += '_ind'
 
 results = []
 
 for run in range(args.runs):
     
-    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
+    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, dropout = args.dropout).to(device)
     encoder = GraphModel(dataset_ind.x.size(1), num_features, args).to(device)
 
     best_current = -100000
-    best_epoch = 0
     best_auroc = 0
-    best_auroc_d = 0
     best_aurc = 0
     best_fpr = 0
     test_acc = 0
-    best_encoder = None
-    best_deepset = None
+
+    best_result = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
     
     optimizer1 = torch.optim.Adam(
             [{'params': encoder.parameters()},
             {'params': deepset.parameters()}],
             lr=args.lr, weight_decay=0.005
         )
-    
-    best_Beta2E = None
 
-    Beta2E = MLP(args.hidden_channels * 2, args.hidden_channels * 2, 1, 3, args.dropout).to(device)
+    Beta2E = MLP(args.hidden_channels * 2, args.hidden_channels * 2, 1, args.b2e_layers, args.b2e_dropout).to(device)
     
     Beta2E.to(device)
     
@@ -97,7 +77,7 @@ for run in range(args.runs):
     ## pretrain node embedding
     print('Start Training')
 
-    for loop in range(50):
+    for loop in range(args.epochs//20):
 
         for epo in range(20):
 
@@ -326,51 +306,34 @@ for run in range(args.runs):
                 
             print(f'{s}')
 
-            if eval_nodeE['test'][-1] + auroc - aurc*10 > best_current:
+            if eval_nodeE['test'][-1] + auroc - aurc*10 > best_result['best_current']:
 
-                best_auroc_d = 0
+                best_result['best_auroc'] = auroc
+                best_result['best_fpr'] = fpr
+                best_result['best_aurc'] = aurc
 
-                best_auroc = auroc
-                best_fpr = fpr
-                best_aurc = aurc
+                best_result['test_acc'] = eval_nodeE['test'][-1]
 
-                test_acc = eval_nodeE['test'][-1]
+                best_result['best_current'] = eval_nodeE['test'][-1] + auroc - aurc*10
+            
+    results.append([best_result['best_auroc'], best_result['best_aurc'], best_result['best_fpr'], best_result['test_acc']])
 
-                best_current = eval_nodeE['test'][-1] + auroc - aurc*10
-                best_epoch = epo
+results = torch.tensor(results, dtype=torch.float) * 100
 
-                best_Beta2E = Beta2E.state_dict()
-                best_encoder = encoder.state_dict()
-                best_deepset = deepset.state_dict()
-                
-    # print(f'Run {run}: best current test acc: {best_test}, best current val acc: {best_current}, before fine-tuning encoder val acc: {encoder_history_acc}, best encoder acc: {best_encoder_acc}, best distance: {best_distance}, best loss: {best_loss}, best distance-based auroc: {best_auroc_d}, best auroc: {best_auroc}, best aurc: {best_aurc}, best eaurc: {best_eaurc}, best epoch: {best_epoch}, best result: {best_result}')
-    results.append({'run': run, 'test acc': test_acc, 'best aurc': best_aurc, 'best fpr95': best_fpr, 'best auroc': best_auroc, 'best distance-based auroc': best_auroc_d, 'epo': best_epoch})
-
-# os.makedirs(f'./result/{args.dataset}/{args.prefix}/', exist_ok = True)
-# torch.save(results, f'./result/{args.dataset}/{args.prefix}/{name}.pth')
-
-for r in results:
-    print('------------------------------------------------------')
-    print(r)
-
-
-acc = []
-aurc = []
-fpr = []
-auroc = []
-auroc_d = []
-for r in results:
-
-    acc.append(r['test acc']*100)
-    aurc.append(r['best aurc']*1000)
-    fpr.append(r['best fpr95']*100)
-    auroc.append(r['best auroc']*100)
-    auroc_d.append(r['best distance-based auroc']*100)
-
-print(f'------------------summary------------------')
-print(f'Acc: {np.array(acc).mean():.2f} ± {np.array(acc).std():.2f}')
-print(f'AURC: {np.array(aurc).mean():.2f} ± {np.array(aurc).std():.2f}')
-print(f'fpr: {np.array(fpr).mean():.2f} ± {np.array(fpr).std():.2f}')
-print(f'auroc: {np.array(auroc).mean():.2f} ± {np.array(auroc).std():.2f}')
-# print(auroc)
-print(f'auroc_d: {np.array(auroc_d).mean():.2f} ± {np.array(auroc_d).std():.2f}')
+### Save results ###
+import os
+if not os.path.exists(f'results/{args.dataset}'):
+    os.makedirs(f'results/{args.dataset}')
+filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
+print(f"Saving results to {filename}")
+with open(f"{filename}", 'a+') as write_obj:
+    write_obj.write(f"{args.hidden_channels} {args.u_hidden} {args.gamma} {args.lr} {args.b2e_lr} {args.dropout} {args.b2e_dropout} {args.b2e_layers} {args.epochs}\n")
+    for k in range(results.shape[1] // 3):
+        r = results[:, k * 3]
+        write_obj.write(f'OOD Test {k + 1} Final AUROC: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 1]
+        write_obj.write(f'OOD Test {k + 1} Final AURC: {r.mean()*10:.2f} ± {r.std()*10:.2f} ')
+        r = results[:, k * 3 + 2]
+        write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f}\n')
+    r = results[:, -1]
+    write_obj.write(f'In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')
