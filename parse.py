@@ -11,7 +11,7 @@ def parser_add_main_args(parser):
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--seed', type=int, default=123)
     parser.add_argument('--runs', type=int, default=1, help='number of distinct runs')
-    parser.add_argument('--epochs', type=int, default=200)
+    parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--path', default='./results/images', type=str)
     parser.add_argument('--prefix', default='all', type=str)
     parser.add_argument('--fix', action='store_true')
