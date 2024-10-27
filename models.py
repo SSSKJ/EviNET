@@ -70,9 +70,9 @@ class InvLinear(nn.Module):
         return F.softplus(y)
 
     def extra_repr(self):
-        return 'in_features={}, out_features={}, bias={}, reduction={}'.format(
+        return 'in_features={}, out_features={}, bias={}'.format(
             self.in_features, self.out_features,
-            self.bias is not None, self.reduction)
+            self.bias is not None)
     
 class GCN(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2,
