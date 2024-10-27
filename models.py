@@ -76,7 +76,7 @@ class InvLinear(nn.Module):
     
 class GCN(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2,
-                 dropout=0, save_mem=True, use_bn=True, mode = 0):
+                 dropout=0, save_mem=True, use_bn=True):
         super(GCN, self).__init__()
 
         self.convs = nn.ModuleList()
@@ -96,7 +96,6 @@ class GCN(nn.Module):
         self.dropout = dropout
         self.activation = F.relu
         self.use_bn = use_bn
-        self.mode = mode
 
         self.last_bn = nn.BatchNorm1d(out_channels)
 
@@ -124,15 +123,14 @@ class GCN(nn.Module):
         return x
     
 class GraphModel(nn.Module):
-    def __init__(self, d, c, args, mode = 0):
+    def __init__(self, d, c, args):
         super(GraphModel, self).__init__()
         self.encoder = GCN(in_channels=d,
                     hidden_channels=args.hidden_channels,
                     out_channels=c,
                     num_layers=args.num_layers,
                     dropout=args.dropout,
-                    use_bn=args.use_bn,
-                    mode=mode)
+                    use_bn=args.use_bn)
         
         self.reset_parameters()
 
