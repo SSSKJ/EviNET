@@ -48,7 +48,7 @@ results = []
 
 for run in range(args.runs):
     
-    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, reduction=args.aggr, dropout = args.dropout).to(device)
+    deepset = InvLinear(num_features, args.u_hidden, num_features, bias=True, dropout = args.dropout).to(device)
     encoder = GraphModel(dataset_ind.x.size(1), num_features, args).to(device)
 
     best_current = -100000
