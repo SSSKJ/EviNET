@@ -171,53 +171,29 @@ class CRL(nn.Module):
         if self.ranking_criterion is None:
             self.ranking_criterion = nn.MarginRankingLoss(margin=0.0).to(device)
 
-        if args.dataset in ['product']:
-            dataset_ind.n_id = torch.arange(dataset_ind.num_nodes)
-            loader = NeighborLoader(dataset_ind, num_neighbors=[25, 10], batch_size=args.batch_size, input_nodes=dataset_ind.splits['train'], num_workers=16)
-            outs_logits = []
-            outs_y = []
-            outs_node_idx = []
-            from tqdm import tqdm
-            for batch in tqdm(loader):
-                batch_train = torch.arange(0, batch.batch_size)
-                outs_logits.append(self.encoder(batch.x.to(device), batch.edge_index.to(device))[batch_train])
-                outs_y.append(batch.y[batch_train])
-                outs_node_idx.append(batch.n_id[batch_train])
+        logits_in = self.encoder(dataset_ind.x.to(device), dataset_ind.edge_index.to(device))[train_idx]
+        y = dataset_ind.y[train_idx]
 
-            logits_in = torch.cat(outs_logits, dim=0)
-            y = torch.cat(outs_y, dim=0)
-            node_idx = torch.cat(outs_node_idx, dim=0)
+        conf = F.softmax(logits_in, dim = 1)
+        confidence, _ = conf.max(dim=1)
 
-            node_idx, sorted_indices = torch.sort(node_idx)
-            y = y[sorted_indices]
-            logits_in = logits_in[sorted_indices]
+        rank_input1 = confidence
+        rank_input2 = torch.roll(confidence, -1)
+        idx2 = torch.roll(idx, -1)
 
-        else:
-            logits_in = self.encoder(dataset_ind.x.to(device), dataset_ind.edge_index.to(device))[train_idx]
-            y = dataset_ind.y[train_idx]
-        if args.dataset in ('proteins', 'ppi'):
-            loss = criterion(logits_in, y.to(device).to(torch.float))
-        else:
-            conf = F.softmax(logits_in, dim = 1)
-            confidence, _ = conf.max(dim=1)
+        rank_target, rank_margin = self.correctness_history.get_target_margin(idx, idx2, device)
+        rank_target_nonzero = rank_target.clone()
+        rank_target_nonzero[rank_target_nonzero == 0] = 1
+        rank_input2 = rank_input2 + rank_margin / rank_target_nonzero
 
-            rank_input1 = confidence
-            rank_input2 = torch.roll(confidence, -1)
-            idx2 = torch.roll(idx, -1)
+        ranking_loss = self.ranking_criterion(rank_input1,rank_input2,rank_target)
 
-            rank_target, rank_margin = self.correctness_history.get_target_margin(idx, idx2, device)
-            rank_target_nonzero = rank_target.clone()
-            rank_target_nonzero[rank_target_nonzero == 0] = 1
-            rank_input2 = rank_input2 + rank_margin / rank_target_nonzero
+        pred_in = F.log_softmax(logits_in, dim=1)
+        cls_loss = criterion(pred_in, y.squeeze(1).to(device))
+        ranking_loss = args.rank_weight * ranking_loss
+        loss = cls_loss + ranking_loss
 
-            ranking_loss = self.ranking_criterion(rank_input1,rank_input2,rank_target)
-
-            pred_in = F.log_softmax(logits_in, dim=1)
-            cls_loss = criterion(pred_in, y.squeeze(1).to(device))
-            ranking_loss = args.rank_weight * ranking_loss
-            loss = cls_loss + ranking_loss
-
-            prec, correct = crl_utils.accuracy(logits_in, y.squeeze(1).to(device))
+        prec, correct = crl_utils.accuracy(logits_in, y.squeeze(1).to(device))
 
         return loss, idx, correct, logits_in
 
