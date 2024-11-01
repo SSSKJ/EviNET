@@ -322,7 +322,7 @@ results = torch.tensor(results, dtype=torch.float) * 100
 import os
 if not os.path.exists(f'results/{args.dataset}'):
     os.makedirs(f'results/{args.dataset}')
-filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
+filename = f'results/{args.dataset}/{args.prefix}.csv'
 print(f"Saving results to {filename}")
 with open(f"{filename}", 'a+') as write_obj:
     write_obj.write(f"{args.hidden_channels} {args.u_hidden} {args.gamma} {args.lr} {args.b2e_lr} {args.dropout} {args.b2e_dropout} {args.b2e_layers} {args.epochs}\n")
