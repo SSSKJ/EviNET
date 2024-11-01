@@ -1,5 +1,5 @@
 ## Table 2(a)
-python trian_edl.py --dataset amazon-photo --u_hidden 64 --b2e_dropout 0.6 --b2e_layers 3 --b2e_lr 0.001 --hidden_channels 64 --gamma 55 --lr 0.0005 --dropout 0.2 --use_bn --runs 5 --prefix Table2a
+python train_edl.py --dataset amazon-photo --u_hidden 64 --b2e_dropout 0.6 --b2e_layers 3 --b2e_lr 0.001 --hidden_channels 64 --gamma 55 --lr 0.0005 --dropout 0.2 --use_bn --runs 5 --prefix Table2a
 
 ## Table 2(b)
 python all_in_one_block.py --dataset amazon-photo --u_hidden 64 --b2e_dropout 0.6 --b2e_layers 3 --b2e_lr 0.001 --hidden_channels 64 --gamma 55 --lr 0.0005 --dropout 0.2 --use_bn --runs 5 --prefix Table2b --fix
