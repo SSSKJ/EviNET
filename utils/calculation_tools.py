@@ -104,10 +104,8 @@ def get_scoreNN(x_alpha, x_beta, class_alphas, class_betas, model, args):
     all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1).view(-1, args.hidden_channels * 2)
 
     evidence = model(all_cat).view(node_cat.size(0), class_cat.size(0))
-    if args.residual:
-        evidence[:, -1] += (class_cat.size(0) - 1)
-
-    elif args.fix:
+    
+    if args.fix:
         evidence[:, -1] = (class_cat.size(0) - 1)
 
     belief = evidence/evidence.sum(-1).unsqueeze(1)
@@ -141,10 +139,8 @@ def get_scoreNN_attn(x_alpha, x_beta, class_alphas, class_betas, model, args):
     # 结合样本嵌入和类别嵌入
     all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1)
     evidence = model(all_cat).view(node_cat.size(0), class_cat.size(0))
-    if args.residual:
-        evidence[:, -1] += (class_cat.size(0) - 1)
-
-    elif args.fix:
+    
+    if args.fix:
         evidence[:, -1] = (class_cat.size(0) - 1)
 
     belief = evidence/evidence.sum(-1).unsqueeze(1)

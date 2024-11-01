@@ -191,10 +191,8 @@ for run in range(args.runs):
             all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1).view(-1, args.hidden_channels * 2)
 
             evidence = Beta2E(all_cat).view(node_cat.size(0), class_cat.size(0))
-            if args.residual:
-                evidence[:, -1] += c
-
-            elif args.fix:
+            
+            if args.fix:
                 evidence[:, -1] = c
 
             alpha = evidence[:, :-1] + 1/c * evidence[:, -1].view(-1, 1)

@@ -190,11 +190,8 @@ for run in range(args.runs):
                 evidence.append(Beta2E[class_index](x.to(device), dataset_ind.edge_index.to(device)))
                 
             evidence = torch.concat(evidence, -1)
-
-            if args.residual:
-                evidence[:, -1] += c
-
-            elif args.fix:
+            
+            if args.fix:
                 evidence[:, -1] = c
 
             alpha = evidence[:, :-1] + 1/c * evidence[:, -1].view(-1, 1)
