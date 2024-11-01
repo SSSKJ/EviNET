@@ -5,5 +5,7 @@
 /data/*
 /curves/*
 /pretrain/*
-/result/*
+/results/*
 /logs/*
+
+/baseline/results/*
