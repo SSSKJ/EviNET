@@ -6,7 +6,7 @@ def parser_add_main_args(parser):
     parser.add_argument('--dataset', type=str, default='cora')
     parser.add_argument('--ood_type', type=str, default='label', choices=['structure', 'label', 'feature'],
                         help='only for cora/amazon/arxiv datasets')
-    parser.add_argument('--data_dir', type=str, default='./data/')
+    parser.add_argument('--data_dir', type=str, default='../data/')
     # parser.add_argument('--data_dir', type=str, default='/mnt/nas/dataset_share/GNN-common-datasets')
     parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
