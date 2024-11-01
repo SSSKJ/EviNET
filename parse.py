@@ -15,6 +15,10 @@ def parser_add_main_args(parser):
     parser.add_argument('--path', default='./results/images', type=str)
     parser.add_argument('--prefix', default='all', type=str)
     parser.add_argument('--fix', action='store_true')
+    parser.add_argument('--train_prop', type=float, default=.1,
+                        help='training label proportion')
+    parser.add_argument('--valid_prop', type=float, default=.1,
+                        help='validation label proportion')
 
     # model network
     parser.add_argument('--hidden_channels', type=int, default=64)
