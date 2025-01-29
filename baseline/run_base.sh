@@ -1,4 +1,4 @@
-for data in "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
+for data in "wikics" "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
 do
     for noise in 0 0.0001 0.01 0.1 0.5 1
     do
@@ -9,31 +9,31 @@ do
     done
 done
 
-for dataset in  "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
+for dataset in  "wikics" "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
 do
     for method in "ODIN"
     do
-        python main.py --method $method --dataset $dataset --device 0 --run 5 --use_bn --epoch 1000
+        python main.py --method $method --dataset $dataset --device 1 --run 5 --use_bn --epoch 1000
     done
 done
 
-for dataset in  "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
+for dataset in  "wikics" "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
 do
     for method in "doctor" "maxlogits" "CRL"
     do
-        python main.py --method $method --dataset $dataset --device 0 --run 5 --use_bn --epoch 1000
+        python main.py --method $method --dataset $dataset --device 1 --run 5 --use_bn --epoch 1000
     done
 done
 
-for dataset in  "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
+for dataset in  "wikics" "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
 do
     for method in "GNNSafe"
     do
-        python main.py --method $method --dataset $dataset --device 0 --run 5 --use_bn --epoch 1000 --use_prop
+        python main.py --method $method --dataset $dataset --device 1 --run 5 --use_bn --epoch 1000 --use_prop
     done
 done
 
-for dataset in "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
+for dataset in "wikics" "amazon-photo" "coauthor-cs" "coauthor-physics" "amazon-computer"
 do
     for method in "SGCN" "GPN"
     do
