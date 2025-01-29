@@ -9,3 +9,6 @@ python all_in_one_block_gcn.py --dataset coauthor-cs --u_hidden 64 --b2e_dropout
 
 ## Coauthor-physics
 python all_in_one_block_gcn.py --dataset coauthor-physics --u_hidden 64 --b2e_dropout 0.6 --b2e_layers 3 --b2e_lr 0.01 --hidden_channels 64 --gamma 15 --lr 0.01 --dropout 0.2 --use_bn --runs 5 --prefix Table1 
+
+## WikiCS
+python all_in_one_block_gcn.py --dataset wikics --u_hidden 64 --b2e_dropout 0.4 --b2e_layers 3 --b2e_lr 0.001 --hidden_channels 64 --gamma 15 --lr 0.0005 --dropout 0.2 --use_bn --runs 5 --device 2 --prefix Table1 
