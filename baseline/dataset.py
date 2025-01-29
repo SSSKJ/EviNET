@@ -9,11 +9,12 @@ import torch_geometric.transforms as T
 
 from data_utils import even_quantile_labels, to_sparse_tensor
 
-from torch_geometric.datasets import Planetoid, Amazon, Coauthor, Twitch, PPI, Reddit
+from torch_geometric.datasets import Planetoid, Amazon, Coauthor, Twitch, PPI, Reddit, WikiCS
 from torch_geometric.transforms import NormalizeFeatures
 from torch_geometric.data import Data
 from torch_geometric.utils import stochastic_blockmodel_graph, subgraph, homophily
 from os import path
+from torch_sparse import SparseTensor
 
 def load_dataset(args):
     '''
@@ -26,13 +27,13 @@ def load_dataset(args):
         dataset_ind, dataset_ood_tr, dataset_ood_te = load_twitch_dataset(args.data_dir)
 
     # single graph, use partial nodes as ind, others as ood according to domain info
-    elif args.dataset in 'arxiv':
-        dataset_ind, dataset_ood_tr, dataset_ood_te = load_arxiv_dataset(args.data_dir)
-    elif args.dataset in 'proteins':
-        dataset_ind, dataset_ood_tr, dataset_ood_te = load_proteins_dataset(args.data_dir)
+    # elif args.dataset in 'arxiv':
+    #     dataset_ind, dataset_ood_tr, dataset_ood_te = load_arxiv_dataset(args.data_dir)
+    elif args.dataset in 'product':
+        dataset_ind, dataset_ood_tr, dataset_ood_te = load_products_dataset(args.data_dir)
 
     # single graph, use original as ind, modified graphs as ood
-    elif args.dataset in ('cora', 'citeseer', 'pubmed', 'amazon-photo', 'amazon-computer', 'coauthor-cs', 'coauthor-physics'):
+    elif args.dataset in ('cora', 'citeseer', 'pubmed', 'amazon-photo', 'amazon-computer', 'coauthor-cs', 'coauthor-physics', 'wikics', 'arxiv'):
         dataset_ind, dataset_ood_tr, dataset_ood_te = load_graph_dataset(args.data_dir, args.dataset, args.ood_type)
 
     else:
@@ -58,52 +59,53 @@ def load_twitch_dataset(data_dir):
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
-def load_arxiv_dataset(data_dir, time_bound=[2015,2017], inductive=True):
+
+def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=False):
     from ogb.nodeproppred import NodePropPredDataset
 
     ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
     edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
     node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
     label = torch.as_tensor(ogb_dataset.labels).reshape(-1, 1)
-    year = ogb_dataset.graph['node_year']
+    year = torch.as_tensor(ogb_dataset.graph['node_year'])
 
     year_min, year_max = time_bound[0], time_bound[1]
     test_year_bound = [2017, 2018, 2019, 2020]
 
-    center_node_mask = (year <= year_min).squeeze(1)
+    center_node_mask = torch.as_tensor((year <= year_max).squeeze(1), dtype=torch.bool)
     if inductive:
         ind_edge_index, _ = subgraph(center_node_mask, edge_index)
     else:
         ind_edge_index = edge_index
-
+    ind_edge_index = SparseTensor(row=ind_edge_index[0], col=ind_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
     dataset_ind = Data(x=node_feat, edge_index=ind_edge_index, y=label)
     idx = torch.arange(label.size(0))
     dataset_ind.node_idx = idx[center_node_mask]
 
-    center_node_mask = (year <= year_max).squeeze(1) * (year > year_min).squeeze(1)
+    center_node_mask = (year <= year_max).squeeze(1) & (year > year_min).squeeze(1)
     if inductive:
-        all_node_mask = (year <= year_max).squeeze(1)
+        all_node_mask = center_node_mask
         ood_tr_edge_index, _ = subgraph(all_node_mask, edge_index)
     else:
         ood_tr_edge_index = edge_index
-
+    ood_tr_edge_index = SparseTensor(row=ood_tr_edge_index[0], col=ood_tr_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
     dataset_ood_tr = Data(x=node_feat, edge_index=ood_tr_edge_index, y=label)
     idx = torch.arange(label.size(0))
     dataset_ood_tr.node_idx = idx[center_node_mask]
 
-    dataset_ood_te = []
-    for i in range(len(test_year_bound)-1):
-        center_node_mask = (year <= test_year_bound[i+1]).squeeze(1) * (year > test_year_bound[i]).squeeze(1)
-        if inductive:
-            all_node_mask = (year <= test_year_bound[i+1]).squeeze(1)
-            ood_te_edge_index, _ = subgraph(all_node_mask, edge_index)
-        else:
-            ood_te_edge_index = edge_index
+    center_node_mask = torch.zeros(year.size(0), dtype=torch.bool)
+    for i in range(len(test_year_bound) - 1):
+        mask = (year <= test_year_bound[i + 1]).squeeze(1) & (year > test_year_bound[i]).squeeze(1)
+        center_node_mask |= mask
 
-        dataset = Data(x=node_feat, edge_index=ood_te_edge_index, y=label)
-        idx = torch.arange(label.size(0))
-        dataset.node_idx = idx[center_node_mask]
-        dataset_ood_te.append(dataset)
+    if inductive:
+        all_node_mask = center_node_mask
+        ood_te_edge_index, _ = subgraph(all_node_mask, edge_index)
+    else:
+        ood_te_edge_index = edge_index
+    ood_te_edge_index = SparseTensor(row=ood_te_edge_index[0], col=ood_te_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
+    dataset_ood_te = Data(x=node_feat, edge_index=ood_te_edge_index, y=label)
+    dataset_ood_te.node_idx = torch.arange(label.size(0))[center_node_mask]
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
@@ -157,7 +159,51 @@ def load_proteins_dataset(data_dir, inductive=True):
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
+def load_products_dataset(data_dir, inductive=False):
+    from ogb.nodeproppred import NodePropPredDataset
 
+    ogb_dataset = NodePropPredDataset(name='ogbn-products', root=f'{data_dir}ogb')
+    edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
+    node_feat = torch.as_tensor(ogb_dataset.graph['node_feat'])
+    label = torch.as_tensor(ogb_dataset.labels).reshape(-1)
+    
+    unique_labels = torch.unique(label)
+    sorted_labels = torch.sort(unique_labels)[0]
+    
+    ood_te_classes = sorted_labels[-10:]
+    ood_tr_class = sorted_labels[-11]
+    # ind_classes = sorted_labels[:-11]
+    ind_classes = sorted_labels[:-10]
+
+    ind_mask = torch.isin(label, ind_classes)
+    ood_tr_mask = label == ood_tr_class
+    ood_te_mask = torch.isin(label, ood_te_classes)
+
+    if inductive:
+        ind_edge_index, _ = subgraph(ind_mask, edge_index)
+    else:
+        ind_edge_index = edge_index
+    ind_edge_index = SparseTensor(row=ind_edge_index[0], col=ind_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
+    dataset_ind = Data(x=node_feat, edge_index=ind_edge_index, y=label)
+    dataset_ind.node_idx = torch.arange(label.size(0))[ind_mask]
+
+    if inductive:
+        ood_tr_edge_index, _ = subgraph(ood_tr_mask, edge_index)
+    else:
+        ood_tr_edge_index = edge_index
+    ood_tr_edge_index = SparseTensor(row=ood_tr_edge_index[0], col=ood_tr_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
+    dataset_ood_tr = Data(x=node_feat, edge_index=ood_tr_edge_index, y=label)
+    dataset_ood_tr.node_idx = torch.arange(label.size(0))[ood_tr_mask]
+
+    if inductive:
+        ood_te_edge_index, _ = subgraph(ood_te_mask, edge_index)
+    else:
+        ood_te_edge_index = edge_index
+    ood_te_edge_index = SparseTensor(row=ood_te_edge_index[0], col=ood_te_edge_index[1], sparse_sizes=(node_feat.size(0), node_feat.size(0)))
+    dataset_ood_te = Data(x=node_feat, edge_index=ood_te_edge_index, y=label)
+    dataset_ood_te.node_idx = torch.arange(label.size(0))[ood_te_mask]
+
+    return dataset_ind, dataset_ood_tr, dataset_ood_te
 
 def create_sbm_dataset(data, p_ii=1.5, p_ij=0.5):
     n = data.num_nodes
@@ -258,10 +304,19 @@ def load_graph_dataset(data_dir, dataname, ood_type):
         torch_dataset = Coauthor(root=f'{data_dir}Coauthor',
                                  name='Physics', transform=transform)
         dataset = torch_dataset[0]
+    elif dataname == 'wikics':
+        torch_dataset = WikiCS(root=f'{data_dir}WikiCS')
+        dataset = torch_dataset[0]
+        tensor_split_idx = {}
+        idx = torch.arange(dataset.num_nodes)
+        tensor_split_idx['train'] = idx[dataset.train_mask[:,0]]  # 使用第一个split
+        tensor_split_idx['valid'] = idx[dataset.val_mask[:,0]]
+        tensor_split_idx['test'] = idx[dataset.test_mask]
+        dataset.splits = tensor_split_idx
     elif dataname == 'arxiv':
         from ogb.nodeproppred import NodePropPredDataset
-        print(f'{data_dir}ogb')
-        exit()
+        # print(f'{data_dir}ogb')
+        # exit()
         ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
         edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
         x = torch.as_tensor(ogb_dataset.graph['node_feat'])
@@ -294,6 +349,8 @@ def load_graph_dataset(data_dir, dataname, ood_type):
             class_t = 3
         elif dataname == 'citeseer':
             class_t = 2
+        elif dataname == 'wikics':
+            class_t = 3
         label = dataset.y
 
         max_label = max(dataset.y)
@@ -302,11 +359,11 @@ def load_graph_dataset(data_dir, dataname, ood_type):
         idx = torch.arange(label.size(0))
         dataset_ind.node_idx = idx[center_node_mask_ind]
 
-        if dataname in ('cora', 'citeseer', 'pubmed'):
+        if dataname in ('cora', 'citeseer', 'pubmed', 'wikics'):
             split_idx = dataset.splits
         elif dataname == 'arxiv':
             split_idx = ogb_dataset.get_idx_split()
-        if dataname in ('cora', 'citeseer', 'pubmed', 'arxiv'):
+        if dataname in ('cora', 'citeseer', 'pubmed', 'arxiv', 'wikics'):
             tensor_split_idx = {}
             idx = torch.arange(label.size(0))
             for key in split_idx:

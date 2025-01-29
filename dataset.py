@@ -9,7 +9,7 @@ import torch_geometric.transforms as T
 
 from data_utils import even_quantile_labels, to_sparse_tensor, rand_splits
 
-from torch_geometric.datasets import Planetoid, Amazon, Coauthor, Twitch, PPI, Reddit
+from torch_geometric.datasets import Planetoid, Amazon, Coauthor, Twitch, PPI, Reddit, WikiCS
 from torch_geometric.transforms import NormalizeFeatures
 from torch_geometric.data import Data
 from torch_geometric.utils import stochastic_blockmodel_graph, subgraph, homophily
@@ -33,7 +33,7 @@ def load_data(args):
             dataset_ood_te.y = dataset_ood_te.y.unsqueeze(1)
 
     # get the splits for all runs
-    if args.dataset in ['cora', 'citeseer', 'pubmed']:
+    if args.dataset in ['cora', 'citeseer', 'pubmed', 'wikics']:
         pass
     else:
         dataset_ind.splits = rand_splits(dataset_ind.node_idx, train_prop=args.train_prop, valid_prop=args.valid_prop)
@@ -74,13 +74,13 @@ def load_dataset(args):
         dataset_ind, dataset_ood_tr, dataset_ood_te = load_twitch_dataset(args.data_dir)
 
     # single graph, use partial nodes as ind, others as ood according to domain info
-    elif args.dataset in 'arxiv':
-        dataset_ind, dataset_ood_tr, dataset_ood_te = load_arxiv_dataset(args.data_dir, inductive = args.inductive)
+    # elif args.dataset in 'arxiv':
+    #     dataset_ind, dataset_ood_tr, dataset_ood_te = load_arxiv_dataset(args.data_dir)
     elif args.dataset in 'product':
-        dataset_ind, dataset_ood_tr, dataset_ood_te = load_products_dataset(args.data_dir, inductive = args.inductive)
+        dataset_ind, dataset_ood_tr, dataset_ood_te = load_products_dataset(args.data_dir)
 
     # single graph, use original as ind, modified graphs as ood
-    elif args.dataset in ('cora', 'citeseer', 'pubmed', 'amazon-photo', 'amazon-computer', 'coauthor-cs', 'coauthor-physics'):
+    elif args.dataset in ('cora', 'citeseer', 'pubmed', 'amazon-photo', 'amazon-computer', 'coauthor-cs', 'coauthor-physics', 'wikics', 'arxiv'):
         dataset_ind, dataset_ood_tr, dataset_ood_te = load_graph_dataset(args.data_dir, args.dataset, args.ood_type)
 
     else:
@@ -139,7 +139,7 @@ def load_erdos_renyi_dataset_with_density(num_nodes, edge_density, num_features,
     return dataset
 
 
-def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
+def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=False):
     from ogb.nodeproppred import NodePropPredDataset
 
     ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
@@ -188,7 +188,7 @@ def load_arxiv_dataset(data_dir, time_bound=[2015, 2017], inductive=True):
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te
 
-def load_products_dataset(data_dir, inductive=True):
+def load_products_dataset(data_dir, inductive=False):
     from ogb.nodeproppred import NodePropPredDataset
 
     ogb_dataset = NodePropPredDataset(name='ogbn-products', root=f'{data_dir}ogb')
@@ -201,7 +201,8 @@ def load_products_dataset(data_dir, inductive=True):
     
     ood_te_classes = sorted_labels[-10:]
     ood_tr_class = sorted_labels[-11]
-    ind_classes = sorted_labels[:-11]
+    # ind_classes = sorted_labels[:-11]
+    ind_classes = sorted_labels[:-10]
 
     ind_mask = torch.isin(label, ind_classes)
     ood_tr_mask = label == ood_tr_class
@@ -332,10 +333,19 @@ def load_graph_dataset(data_dir, dataname, ood_type):
         torch_dataset = Coauthor(root=f'{data_dir}Coauthor',
                                  name='Physics', transform=transform)
         dataset = torch_dataset[0]
+    elif dataname == 'wikics':
+        torch_dataset = WikiCS(root=f'{data_dir}WikiCS')
+        dataset = torch_dataset[0]
+        tensor_split_idx = {}
+        idx = torch.arange(dataset.num_nodes)
+        tensor_split_idx['train'] = idx[dataset.train_mask[:,0]]  # 使用第一个split
+        tensor_split_idx['valid'] = idx[dataset.val_mask[:,0]]
+        tensor_split_idx['test'] = idx[dataset.test_mask]
+        dataset.splits = tensor_split_idx
     elif dataname == 'arxiv':
         from ogb.nodeproppred import NodePropPredDataset
-        print(f'{data_dir}ogb')
-        exit()
+        # print(f'{data_dir}ogb')
+        # exit()
         ogb_dataset = NodePropPredDataset(name='ogbn-arxiv', root=f'{data_dir}ogb')
         edge_index = torch.as_tensor(ogb_dataset.graph['edge_index'])
         x = torch.as_tensor(ogb_dataset.graph['node_feat'])
@@ -368,6 +378,8 @@ def load_graph_dataset(data_dir, dataname, ood_type):
             class_t = 3
         elif dataname == 'citeseer':
             class_t = 2
+        elif dataname == 'wikics':
+            class_t = 3
         label = dataset.y
 
         max_label = max(dataset.y)
@@ -376,11 +388,11 @@ def load_graph_dataset(data_dir, dataname, ood_type):
         idx = torch.arange(label.size(0))
         dataset_ind.node_idx = idx[center_node_mask_ind]
 
-        if dataname in ('cora', 'citeseer', 'pubmed'):
+        if dataname in ('cora', 'citeseer', 'pubmed', 'wikics'):
             split_idx = dataset.splits
         elif dataname == 'arxiv':
             split_idx = ogb_dataset.get_idx_split()
-        if dataname in ('cora', 'citeseer', 'pubmed', 'arxiv'):
+        if dataname in ('cora', 'citeseer', 'pubmed', 'arxiv', 'wikics'):
             tensor_split_idx = {}
             idx = torch.arange(label.size(0))
             for key in split_idx:
