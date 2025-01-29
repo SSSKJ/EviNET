@@ -373,9 +373,12 @@ def evaluate_classify(model, dataset, eval_func, criterion, args, device):
 def evaluate_detect(model, dataset_ind, dataset_ood, criterion, eval_func, args, device):
     model.eval()
 
-    test_ind_score = model.detect(dataset_ind, dataset_ind.splits['test'], device, args).cpu()
-
-    test_ood_score = model.detect(dataset_ood, dataset_ood.node_idx, device, args).cpu()
+    if args.method == 'Mahalanobis':
+        test_ind_score = model.detect(dataset_ind, dataset_ind.splits['train'], dataset_ind, dataset_ind.splits['test'], device, args).cpu()
+        test_ood_score = model.detect(dataset_ind, dataset_ind.splits['train'], dataset_ood, dataset_ood.node_idx, device, args).cpu()
+    else:
+        test_ind_score = model.detect(dataset_ind, dataset_ind.splits['test'], device, args).cpu()
+        test_ood_score = model.detect(dataset_ood, dataset_ood.node_idx, device, args).cpu()
     auroc, aupr, fpr, _ = get_measures(test_ind_score, test_ood_score)
 
     test_idx = dataset_ind.splits['test']
