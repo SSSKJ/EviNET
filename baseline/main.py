@@ -58,7 +58,7 @@ else:
         dataset_ood_te.y = dataset_ood_te.y.unsqueeze(1)
 
 # get the splits for all runs
-if args.dataset in ['cora', 'citeseer', 'pubmed']:
+if args.dataset in ['cora', 'citeseer', 'pubmed', 'wikics']:
     pass
 else:
     dataset_ind.splits = rand_splits(dataset_ind.node_idx, train_prop=args.train_prop, valid_prop=args.valid_prop)
@@ -140,6 +140,8 @@ for run in range(args.runs):
         model = OE(d, c, args).to(device)
     elif args.method == "ODIN":
         model = ODIN(d, c, args).to(device)
+    elif args.method == "Mahalanobis":
+        model = Mahalanobis(d, c, args).to(device)
 
     if args.dataset in ('proteins', 'ppi'):
         criterion = nn.BCEWithLogitsLoss()
@@ -216,7 +218,7 @@ for run in range(args.runs):
                       f'Valid: {100 * result[1]:.2f}%, '
                       f'Test: {100 * result[2]:.2f}%')
         else:
-            if args.method == "ODIN":
+            if args.method == "ODIN" or args.method == 'Mahalanobis':
                 if epoch == args.epochs - 1:
                     tick = time.time()
                     result = evaluate_detect(model, dataset_ind, dataset_ood_te, criterion, eval_func, args, device)
@@ -250,10 +252,10 @@ for run in range(args.runs):
                           f'Test Score: {100 * result[-2]:.2f}%')
 
         torch.cuda.empty_cache()
-    if args.method != "ODIN":
+    if args.method != "ODIN" and args.method != "Mahalanobis":
         logger.print_statistics(run)
 
-if args.method != "ODIN":
+if args.method != "ODIN" and args.method != "Mahalanobis":
     results = logger.print_statistics()
 else:
     results = torch.tensor([list(r.values()) for r in odin_r], dtype=torch.float) * 100
@@ -264,13 +266,13 @@ import os
 
 if not os.path.exists(f'results/{args.dataset}'):
     os.makedirs(f'results/{args.dataset}')
-if args.method == 'ODIN':
+if args.method == 'ODIN' or args.method == 'Mahalanobis':
     filename = f'results/{args.dataset}/{args.method}_{args.prefix}.csv'
 else:
     filename = f'results/{args.dataset}/{args.method}.csv'
 print(f"Saving results to {filename}")
 with open(f"{filename}", 'a+') as write_obj:
-    if args.method == "ODIN":
+    if args.method == 'ODIN' or args.method == 'Mahalanobis':
         write_obj.write(f"{args.backbone} {args.T} {args.noise} {args.lamda}\n")
     else:
         write_obj.write(f"{args.backbone} {args.m_in} {args.m_out} {args.lamda}\n")
