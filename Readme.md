@@ -54,7 +54,17 @@ bash run_ablation.sh
 
 The results can be found in under ./baseline/results/ for baseline and ./results/ for EviNet and ablation studies.
 
-### 
 
+## Citation
+If you find the project helpful, we would appreciate if you cite the work:
 
-## Reference
+```
+@inproceedings{
+  anonymous2025evinet,
+  title={{EVINET}: Towards Open-World Graph Learning via Evidential Reasoning Network},
+  author={Anonymous},
+  booktitle={31st SIGKDD Conference on Knowledge Discovery and Data Mining - Research Track (February 2025 Deadline)},
+  year={2025},
+  url={https://openreview.net/forum?id=SCRDyuA6Ju}
+}
+```
