@@ -57,7 +57,7 @@ for run in range(args.runs):
     best_fpr = 0
     test_acc = 0
 
-    best_result = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0}
+    best_result = {'run': run, 'best_auroc': 0, 'best_aurc': 0, 'best_fpr': 0, 'best_current': -100000, 'test_acc': 0, 'best_misd_auroc': 0, 'best_misd_aupr': 0, 'best_aupr': 0}
     
     optimizer1 = torch.optim.Adam(
             [{'params': encoder.parameters()},
@@ -296,6 +296,8 @@ for run in range(args.runs):
             auroc, aupr, fpr, _ = get_measures(test_ind_score_vacuity.cpu().detach(), test_ood_score_vacuity.cpu().detach())
             aurc, _ = eval_aurc(correct, test_ind_score_conflict.cpu().detach())
 
+            misd_auroc, misd_aupr, _, _ = get_measures(test_ind_score_vacuity.cpu().detach()[correct], test_ind_score_vacuity.cpu().detach()[~correct])
+
             result = {'auroc': auroc, 'aurc': aurc, 'fpr95': fpr}
 
             for tag in result:
@@ -306,16 +308,23 @@ for run in range(args.runs):
             print(f'{s}')
 
             if eval_nodeE['test'][-1] + auroc - aurc*10 > best_result['best_current']:
+            # if eval_nodeE['test'][-1] > best_result['best_current']:
 
                 best_result['best_auroc'] = auroc
                 best_result['best_fpr'] = fpr
                 best_result['best_aurc'] = aurc
 
+                best_result['best_aupr'] = aupr
+                best_result['best_misd_aupr'] = misd_aupr
+                best_result['best_misd_auroc'] = misd_auroc
+
                 best_result['test_acc'] = eval_nodeE['test'][-1]
 
                 best_result['best_current'] = eval_nodeE['test'][-1] + auroc - aurc*10
+                # best_result['best_current'] = eval_nodeE['test'][-1]
                 
-    results.append([best_result['best_auroc'], best_result['best_aurc'], best_result['best_fpr'], best_result['test_acc']])
+    results.append([best_result['best_auroc'], best_result['best_aurc'], best_result['best_fpr'], best_result['best_aupr'], best_result['best_misd_auroc'], best_result['best_misd_aupr'], best_result['test_acc']])
+    # print(results[-1])
 
 results = torch.tensor(results, dtype=torch.float) * 100
 
@@ -327,12 +336,18 @@ filename = f'results/{args.dataset}/{args.prefix}.csv'
 print(f"Saving results to {filename}")
 with open(f"{filename}", 'a+') as write_obj:
     write_obj.write(f"{args.hidden_channels} {args.u_hidden} {args.gamma} {args.lr} {args.b2e_lr} {args.dropout} {args.b2e_dropout} {args.b2e_layers} {args.epochs}\n")
-    for k in range(results.shape[1] // 3):
+    for k in range(results.shape[1] // 6):
         r = results[:, k * 3]
         write_obj.write(f'OOD Test {k + 1} Final AUROC: {r.mean():.2f} ± {r.std():.2f} ')
         r = results[:, k * 3 + 1]
         write_obj.write(f'OOD Test {k + 1} Final AURC: {r.mean()*10:.2f} ± {r.std()*10:.2f} ')
         r = results[:, k * 3 + 2]
-        write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f}\n')
+        write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 3]
+        write_obj.write(f'OOD Test {k + 1} Final AUPR: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 4]
+        write_obj.write(f'OOD Test {k + 1} Final MisD AUROC: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 5]
+        write_obj.write(f'OOD Test {k + 1} Final MisD AUPR: {r.mean():.2f} ± {r.std():.2f}\n')
     r = results[:, -1]
-    write_obj.write(f'In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')
+    write_obj.write(f'Best Test Score In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')

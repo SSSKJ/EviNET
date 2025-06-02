@@ -136,6 +136,8 @@ for run in range(args.runs):
     elif args.method == 'SGCN':
         teacher = MaxLogits(d, c, args).to(device)
         model = SGCN(d, c, args).to(device)
+    elif args.method == 'GEBM':
+        model = GEBM(d, c, args).to(device)
     elif args.method == 'OE':
         model = OE(d, c, args).to(device)
     elif args.method == "ODIN":
@@ -230,7 +232,7 @@ for run in range(args.runs):
                           f'AURC: {100 * result[1]*10:.2f}%, '
                           f'FPR95: {100 * result[2]:.2f}%, '
                           f'Test Score: {100 * result[-2]:.2f}%')
-                    odin_r.append({'AUROC': result[0], 'AURC': result[1], 'FPR95': result[2], 'Acc': result[-2]})
+                    odin_r.append({'AUROC': result[0], 'AURC': result[1], 'FPR95': result[2], 'AUPR': result[3], 'MisD AUROC': result[4], 'MisD AUPR': result[5], 'Acc': result[6]})
                 else:
                     print(f'Epoch: {epoch:02d}, '
                           f'Loss: {loss:.4f}, ')
@@ -241,6 +243,7 @@ for run in range(args.runs):
                     result = evaluate_detect(model, dataset_ind, dataset_ood_te, criterion, eval_func, args, device)
                     tock = time.time()
                     inference_time.append(tock - tick)
+                # print(result)
                 logger.add_result(run, result)
 
                 if epoch % args.display_step == 0:
@@ -260,7 +263,6 @@ if args.method != "ODIN" and args.method != "Mahalanobis":
 else:
     results = torch.tensor([list(r.values()) for r in odin_r], dtype=torch.float) * 100
 
-
 ### Save results ###
 import os
 
@@ -276,12 +278,18 @@ with open(f"{filename}", 'a+') as write_obj:
         write_obj.write(f"{args.backbone} {args.T} {args.noise} {args.lamda}\n")
     else:
         write_obj.write(f"{args.backbone} {args.m_in} {args.m_out} {args.lamda}\n")
-    for k in range(results.shape[1] // 3):
+    for k in range(results.shape[1] // 6):
         r = results[:, k * 3]
         write_obj.write(f'OOD Test {k + 1} Final AUROC: {r.mean():.2f} ± {r.std():.2f} ')
         r = results[:, k * 3 + 1]
         write_obj.write(f'OOD Test {k + 1} Final AURC: {r.mean()*10:.2f} ± {r.std()*10:.2f} ')
         r = results[:, k * 3 + 2]
-        write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f}\n')
+        write_obj.write(f'OOD Test {k + 1} Final FPR95: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 3]
+        write_obj.write(f'OOD Test {k + 1} Final AUPR: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 4]
+        write_obj.write(f'OOD Test {k + 1} Final MisD AUROC: {r.mean():.2f} ± {r.std():.2f} ')
+        r = results[:, k * 3 + 5]
+        write_obj.write(f'OOD Test {k + 1} Final MisD AUPR: {r.mean():.2f} ± {r.std():.2f}\n')
     r = results[:, -1]
-    write_obj.write(f'In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')
+    write_obj.write(f'Best Test Score In Test Score: {r.mean():.2f} ± {r.std():.2f}\n')

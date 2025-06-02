@@ -398,22 +398,27 @@ def evaluate_detect(model, dataset_ind, dataset_ood, criterion, eval_func, args,
     result = [auroc] + [aurc] + [fpr]
 
     test_score = eval_func(dataset_ind.y[test_idx], out[test_idx])
+    valid_idx = dataset_ind.splits['valid']
+    valid_score = eval_func(dataset_ind.y[valid_idx], out[valid_idx])
 
     # valid_loss = 0.
     # for i, (d_in, d_out) in enumerate(zip(valid_loader_ind, valid_loader_ood)):
     #     valid_loss += model.loss_compute(d_in, d_out, criterion, device, args)
     # valid_loss /= (i+1)
-    valid_idx = dataset_ind.splits['valid']
-    if args.method == "GPN" or args.method == 'SGCN':
-        valid_loss = model.valid_loss(dataset_ind, device)
-    else:
-        if args.dataset in ('proteins', 'ppi'):
-            valid_loss = criterion(out[valid_idx], dataset_ind.y[valid_idx].to(torch.float))
-        else:
-            valid_out = F.log_softmax(out[valid_idx], dim=1)
-            valid_loss = criterion(valid_out, dataset_ind.y[valid_idx].squeeze(1))
+    # valid_idx = dataset_ind.splits['valid']
+    # if args.method == "GPN" or args.method == 'SGCN':
+    #     valid_loss = model.valid_loss(dataset_ind, device)
+    # else:
+    #     if args.dataset in ('proteins', 'ppi'):
+    #         valid_loss = criterion(out[valid_idx], dataset_ind.y[valid_idx].to(torch.float))
+    #     else:
+    #         valid_out = F.log_softmax(out[valid_idx], dim=1)
+    #         valid_loss = criterion(valid_out, dataset_ind.y[valid_idx].squeeze(1))
 
-    result += [test_score] + [valid_loss]
+    auroc_misd, aupr_misd, fpr_misd, _ = get_measures(test_ind_score[correct], test_ind_score[~correct])
+
+
+    result +=  [aupr, auroc_misd, aupr_misd] + [test_score]
     return result
 
 def convert_to_adj(edge_index,n_node):

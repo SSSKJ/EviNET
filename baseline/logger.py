@@ -86,40 +86,50 @@ class Logger_detect(object):
         self.results = [[] for _ in range(runs)]
 
     def add_result(self, run, result):
-        assert len(result) % 3 == 2
-        assert run >= 0 and run < len(self.results)
+        # assert len(result) % 3 == 2
+        # assert run >= 0 and run < len(self.results)
         self.results[run].append(result)
 
     def print_statistics(self, run=None):
         if run is not None:
             result = 100 * torch.tensor(self.results[run])
-            ood_result, test_score, valid_loss = result[:, :-2], result[:, -2], result[:, -1]
+            # ood_result, test_score, valid_loss = result[:, :-2], result[:, -2], result[:, -1]
+            ood_result, test_score, valid_loss = result[:, :-1], result[:, -1], result[:, -1]
             #argmin = valid_loss.argmin().item()
             argmin = (test_score + ood_result[:, 0] - ood_result[:, 1] * 10).argmax().item()
+            # argmin = (test_score).argmax().item()
             print(f'Run {run + 1:02d}:')
             print(f'Chosen epoch: {argmin + 1}')
-            for k in range(result.shape[1] // 3):
+            for k in range(result.shape[1] // 6):
                 print(f'OOD Test {k+1} Final AUROC: {ood_result[argmin, k*3]:.2f}')
                 print(f'OOD Test {k+1} Final AURC: {ood_result[argmin, k*3+1]*10:.2f}')
                 print(f'OOD Test {k+1} Final FPR95: {ood_result[argmin, k*3+2]:.2f}')
+                print(f'OOD Test {k+1} Final AUPR: {ood_result[argmin, k*3+3]:.2f}')
+                print(f'OOD Test {k+1} Final MisD AUROC: {ood_result[argmin, k*3+4]:.2f}')
+                print(f'OOD Test {k+1} Final MisD AUPR: {ood_result[argmin, k*3+5]:.2f}')
             print(f'In Test Score: {test_score[argmin]:.2f}')
         else:
             result = 100 * torch.tensor(self.results)
 
-            ood_te_num = result.shape[2] // 3
+            ood_te_num = result.shape[2] // 6
 
             best_results = []
             for r in result:
-                ood_result, test_score, valid_loss = r[:, :-2], r[:, -2], r[:, -1]
+                # ood_result, test_score, valid_loss = r[:, :-2], r[:, -2], r[:, -1]
+                ood_result, test_score, valid_loss = r[:, :-1], r[:, -1], r[:, -1]
                 #arg_min = valid_loss.argmin().item()
                 arg_min = (test_score + ood_result[:, 0] - ood_result[:, 1] * 10).argmax().item()
+                # arg_min = (test_score).argmax().item()
                 score_val = test_score[arg_min].item()
                 ood_result_val = []
                 for k in range(ood_te_num):
-                    auroc_val = ood_result[arg_min, k*3].item()
-                    aupr_val = ood_result[arg_min, k*3+1].item()
-                    fpr_val = ood_result[arg_min, k*3+2].item()
-                    ood_result_val += [auroc_val, aupr_val, fpr_val]
+                    auroc = ood_result[arg_min, k*3].item()
+                    aurc = ood_result[arg_min, k*3+1].item()
+                    fpr = ood_result[arg_min, k*3+2].item()
+                    aupr = ood_result[arg_min, k*3+3].item()
+                    misd_auroc = ood_result[arg_min, k*3+4].item()
+                    misd_aupr = ood_result[arg_min, k*3+5].item()
+                    ood_result_val += [auroc, aurc, fpr, aupr, misd_auroc, misd_aupr]
                 best_results.append(ood_result_val + [score_val])
 
             best_result = torch.tensor(best_results)
@@ -132,6 +142,12 @@ class Logger_detect(object):
                 print(f'OOD Test {k+1} Final AURC: {r.mean()*10:.2f} ± {r.std()*10:.2f}')
                 r = best_result[:, k*3+2]
                 print(f'OOD Test {k+1} Final FPR95: {r.mean():.2f} ± {r.std():.2f}')
+                r = best_result[:, k*3+3]
+                print(f'OOD Test {k+1} Final AUPR: {r.mean():.2f} ± {r.std():.2f}')
+                r = best_result[:, k*3+4]
+                print(f'OOD Test {k+1} Final MisD AUROC: {r.mean():.2f} ± {r.std():.2f}')
+                r = best_result[:, k*3+5]
+                print(f'OOD Test {k+1} Final MisD AUPR: {r.mean():.2f} ± {r.std():.2f}')
             r = best_result[:, -1]
             print(f'In Test Score: {r.mean():.2f} ± {r.std():.2f}')
 

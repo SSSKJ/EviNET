@@ -1270,3 +1270,139 @@ class Mahalanobis(nn.Module):
             pred_in = F.log_softmax(logits_in, dim=1)
             loss = criterion(pred_in, dataset_ind.y[train_idx].squeeze(1).to(device))
         return loss
+    
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.utils import to_dense_adj
+from torch_scatter import scatter_mean
+from torch.distributions import MultivariateNormal
+
+class GEBM(nn.Module):
+    def __init__(self, d, c, args):
+        super(GEBM, self).__init__()
+        if args.backbone == 'gcn':
+            self.encoder = GCN(in_channels=d,
+                               hidden_channels=args.hidden_channels,
+                               out_channels=c,
+                               num_layers=args.num_layers,
+                               dropout=args.dropout,
+                               use_bn=args.use_bn)
+        elif args.backbone == 'mlp':
+            self.encoder = MLP(in_channels=d, hidden_channels=args.hidden_channels,
+                               out_channels=c, num_layers=args.num_layers,
+                               dropout=args.dropout)
+        elif args.backbone == 'appnp':
+            self.encoder = APPNP_Net(d, args.hidden_channels, c, dropout=args.dropout)
+        elif args.backbone == 'gat':
+            self.encoder = GAT(d, args.hidden_channels, c, num_layers=args.num_layers,
+                               dropout=args.dropout, use_bn=args.use_bn, heads=args.gat_heads, out_heads=args.out_heads)
+        else:
+            raise NotImplementedError
+
+        self.num_classes = c
+        self.gamma = args.gamma_correction
+        self.k = args.num_diffusion_steps
+        self.alpha = args.alpha
+        self.aggregation = args.aggregation
+        self.diffusion_type = args.diffusion_type
+
+        self.mu = None
+        self.var = None
+        self.distributions = None
+        self._fitted = False
+        self._cached_fit_data = None
+
+    def reset_parameters(self):
+        self.encoder.reset_parameters()
+        self._fitted = False
+        self._cached_fit_data = None
+
+    def forward(self, dataset, device):
+        x, edge_index = dataset.x.to(device), dataset.edge_index.to(device)
+        return self.encoder(x, edge_index)
+
+    def _diffuse(self, x, edge_index):
+        adj = to_dense_adj(edge_index)[0]
+        deg = adj.sum(dim=1, keepdim=True)
+        norm_adj = adj / (deg + 1e-6)
+        out = x
+        for _ in range(self.k):
+            out = self.alpha * x + (1 - self.alpha) * torch.matmul(norm_adj, out)
+        return out
+
+    def _fit_from_tensor(self, logits, labels):
+        self.mu = torch.zeros(self.num_classes, logits.shape[1], device=logits.device)
+        self.var = torch.zeros(self.num_classes, logits.shape[1], device=logits.device)
+        self.distributions = []
+        for c in range(self.num_classes):
+            class_z = logits[labels == c]
+            if class_z.shape[0] > 1:
+                self.mu[c] = class_z.mean(dim=0)
+                self.var[c] = class_z.var(dim=0) + 1e-6
+                cov = torch.diag(self.var[c])
+                dist = MultivariateNormal(self.mu[c], covariance_matrix=cov)
+            else:
+                dist = MultivariateNormal(torch.zeros_like(self.mu[0]), torch.eye(logits.shape[1], device=logits.device))
+            self.distributions.append(dist)
+        self._fitted = True
+
+    def fit_from_model(self, dataset, device):
+        self._cached_fit_data = dataset
+        x, edge_index = dataset.x.to(device), dataset.edge_index.to(device)
+        y = dataset.y.squeeze().to(device)
+        train_idx = dataset.splits['train']
+        logits = self.encoder(x, edge_index)
+        z = logits[train_idx]
+        labels = y[train_idx]
+        self._fit_from_tensor(z, labels)
+
+    def maybe_fit_after_loss(self, dataset, device):
+        if not self._fitted:
+            self.fit_from_model(dataset, device)
+
+    def _regularize_energy(self, logits):
+        energy = -logits.clone()
+        for c in range(self.num_classes):
+            mean = self.mu[c]            # (D,)
+            cov_diag = self.var[c]      # (D,)
+            diff = logits - mean        # (N, D)
+            maha = (diff ** 2 / cov_diag).sum(dim=1)  # (N,)
+            log_det = torch.log(cov_diag).sum()
+            log_prob = -0.5 * (maha + log_det + logits.size(1) * torch.log(torch.tensor(2 * torch.pi, device=logits.device)))
+            energy[:, c] -= self.gamma * log_prob
+        return energy
+
+    def detect(self, dataset, node_idx, device, args):
+        if not self._fitted:
+            raise RuntimeError("[GEBM] You must call loss_compute() before detect() so that fit_from_model() can run.")
+
+        x, edge_index = dataset.x.to(device), dataset.edge_index.to(device)
+        logits = self.encoder(x, edge_index)
+        logits_diffused = self._diffuse(logits, edge_index) if self.diffusion_type == 'label_propagation' else self._diffuse(x, edge_index)
+
+        E_I = -torch.logsumexp(self._regularize_energy(logits), dim=1)
+        E_L = -torch.logsumexp(self._regularize_energy(logits_diffused), dim=1)
+        E_G = self._diffuse(-torch.logsumexp(self._regularize_energy(logits), dim=1, keepdim=True), edge_index).squeeze()
+
+        if self.aggregation == 'sum':
+            E_total = torch.logsumexp(torch.stack([E_I, E_L, E_G], dim=0), dim=0)
+        elif self.aggregation == 'mean':
+            E_total = torch.stack([E_I, E_L, E_G], dim=0).mean(dim=0)
+        elif self.aggregation == 'max':
+            E_total = torch.stack([E_I, E_L, E_G], dim=0).max(dim=0)[0]
+        else:
+            raise NotImplementedError
+
+        return -E_total[node_idx]
+
+    def loss_compute(self, dataset_ind, dataset_ood, criterion, device, args):
+        train_idx = dataset_ind.splits['train']
+        logits_in = self.encoder(dataset_ind.x.to(device), dataset_ind.edge_index.to(device))[train_idx]
+        if args.dataset in ('proteins', 'ppi'):
+            loss = criterion(logits_in, dataset_ind.y[train_idx].to(device).float())
+        else:
+            pred_in = F.log_softmax(logits_in, dim=1)
+            loss = criterion(pred_in, dataset_ind.y[train_idx].squeeze(1).to(device))
+        self.maybe_fit_after_loss(dataset_ind, device)
+        return loss

@@ -32,6 +32,7 @@ def cal_logit(a1, b1, a2, b2, gamma, t = 0):
 def cal_distance(a1, b1, a2, b2, t = 0):
 
     query_dist = torch.distributions.beta.Beta(a1, b1)
+    
     entity_dist = torch.distributions.beta.Beta(a2, b2)
 
     if t == 0:
@@ -97,10 +98,8 @@ def get_scoreNN(x_alpha, x_beta, class_alphas, class_betas, model, args):
 
     expanded_node_cat = node_cat.unsqueeze(1).expand(-1, class_cat.size(0), -1)
 
-    # 将类别嵌入扩展到每个样本
     expanded_class_cat = class_cat.unsqueeze(0).expand(node_cat.size(0), -1, -1)
 
-    # 结合样本嵌入和类别嵌入
     all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1).view(-1, args.hidden_channels * 2)
 
     evidence = model(all_cat).view(node_cat.size(0), class_cat.size(0))
@@ -133,10 +132,8 @@ def get_scoreNN_attn(x_alpha, x_beta, class_alphas, class_betas, model, args):
 
     expanded_node_cat = node_cat.unsqueeze(1).expand(-1, class_cat.size(0), -1)
 
-    # 将类别嵌入扩展到每个样本
     expanded_class_cat = class_cat.unsqueeze(0).expand(node_cat.size(0), -1, -1)
 
-    # 结合样本嵌入和类别嵌入
     all_cat = torch.cat([expanded_node_cat, expanded_class_cat], dim=-1)
     evidence = model(all_cat).view(node_cat.size(0), class_cat.size(0))
     

@@ -140,6 +140,10 @@ class GraphModel(nn.Module):
     def forward(self, dataset, device):
         x, edge_index = dataset.x.to(device), dataset.edge_index.to(device)
         return self.encoder(x, edge_index)
+    
+    def new_forward(self, x, edge_index, device):
+        x, edge_index = x.to(device), edge_index.to(device)
+        return self.encoder(x, edge_index)
 
 def eval_acc(y_true, y_pred):
     acc_list = []

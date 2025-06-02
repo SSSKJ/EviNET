@@ -82,3 +82,16 @@ def parser_add_main_args(parser):
 
     parser.add_argument('--prefix', default='all', type=str)
 
+
+    # GraphEBMWrapper hyperparameters
+    parser.add_argument('--gamma_correction', type=float, default=0.1,
+                        help='Weight for Gaussian regularization (γ)')
+    parser.add_argument('--num_diffusion_steps', type=int, default=2,
+                        help='Number of diffusion steps (k)')
+    parser.add_argument('--aggregation', type=str, default='mean',
+                        choices=['mean', 'sum', 'max'],
+                        help='Aggregation strategy for multiscale energy')
+    parser.add_argument('--diffusion_type', type=str, default='label_propagation',
+                        choices=['label_propagation', 'feature_propagation'],
+                        help='Choose between structure-based or feature-based diffusion')
+
