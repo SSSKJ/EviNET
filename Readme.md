@@ -1,6 +1,6 @@
 # EviNet
 
-The official implementation for paper ***"EviNet: Evidential Reasoning Network for Resilient Graph Learning in the Open and Noisy Environments"***
+The official implementation for paper ***"EVINET: Towards Open-World Graph Learning via Evidential Reasoning Network"***
 
 ## Overview
 
