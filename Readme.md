@@ -1,6 +1,6 @@
 # EviNet
 
-The official implementation for paper ***"EVINET: Towards Open-World Graph Learning via Evidential Reasoning Network"***
+The official implementation for paper ***["EVINET: Towards Open-World Graph Learning via Evidential Reasoning Network"](https://www.arxiv.org/abs/2506.07288)***
 
 ## Overview
 
